@@ -1,0 +1,2954 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,user-scalable=no">
+<title>Насекомый Баскетбол</title>
+<style>
+body{margin:0;background:#1a1a2e;color:#fff;font-family:sans-serif;overflow:hidden}
+.overlay{position:fixed;inset:0;background:#1a1a2e;z-index:200;display:flex;flex-direction:column;align-items:center;justify-content:center;padding:20px;box-sizing:border-box;text-align:center;color:#fff}
+h1{font-size:22px;margin:0 0 4px}
+.sub{color:#94a3b8;font-size:12px;margin-bottom:20px}
+.big-btn{padding:14px;margin:5px 0;width:100%;max-width:280px;border:0;border-radius:10px;font-size:15px;cursor:pointer;color:#fff;font-weight:bold}
+#mLocal{background:#22c55e}
+#mLoad{background:#3b82f6}
+#mOnline{background:#6b7280;opacity:0.5}
+#mHelp{background:#8b5cf6}
+#setup{padding:10px;overflow-y:auto;box-sizing:border-box;justify-content:flex-start;text-align:left;display:none}
+#setup h2{font-size:16px;margin:8px 0;text-align:center}
+.team{background:#16213e;padding:6px;border-radius:6px;margin:4px 0;font-size:12px;min-height:26px}
+.team.green{border-left:4px solid #22c55e}
+.team.red{border-left:4px solid #ef4444}
+.chip{display:inline-block;padding:3px 8px;margin:2px;border-radius:4px;cursor:pointer;color:#fff;font-size:11px}
+.chip.g{background:#22c55e}
+.chip.r{background:#ef4444}
+#pool{display:flex;flex-wrap:wrap;gap:3px;margin:8px 0}
+#pool button{padding:5px 8px;background:#3b82f6;color:#fff;border:0;border-radius:4px;font-size:11px}
+#pool button:disabled{opacity:0.25}
+#startBtn{padding:12px 20px;background:#e94560;color:#fff;border:0;border-radius:6px;font-size:14px;font-weight:bold;margin-top:10px}
+#game{display:none;flex-direction:column;height:100vh;width:100vw;overflow:hidden}
+#head{padding:8px;background:#16213e;display:flex;justify-content:space-between;align-items:center;flex-shrink:0;font-size:14px;gap:6px}
+#head button{padding:4px 10px;background:#3b82f6;color:#fff;border:0;border-radius:6px;font-size:12px}
+#canvasWrap{flex:1;display:flex;justify-content:center;align-items:center;min-height:0;overflow:hidden;position:relative}
+#figInfo{position:absolute;top:8px;left:8px;background:rgba(0,0,0,0.85);padding:8px 10px;border-radius:8px;font-size:11px;line-height:1.4;display:none;pointer-events:none;border:1px solid #fbbf24;max-width:200px;z-index:5}
+#figInfo b{color:#fbbf24}
+#figInfo .ab{color:#c084fc}
+#bottom{padding:8px;background:#16213e;flex-shrink:0;min-height:110px}
+#act{display:flex;flex-wrap:wrap;gap:3px;margin-bottom:4px}
+#act button{padding:8px 11px;background:#e94560;color:#fff;border:0;border-radius:6px;font-size:12px;cursor:pointer}
+#act button.abi{background:#8b5cf6}
+#act button.stl{background:#f59e0b;font-weight:bold}
+#act button.end{background:#f59e0b;font-weight:bold}
+#log{font-size:11px;color:#94a3b8;max-height:55px;overflow:auto;line-height:1.4}
+canvas{max-width:100%;max-height:100%;display:block}
+#menuOverlay{position:fixed;inset:0;background:rgba(0,0,0,0.95);z-index:300;display:none;padding:20px;box-sizing:border-box;flex-direction:column;align-items:center;justify-content:center;color:#fff}
+#menuOverlay button{padding:14px;margin:5px 0;width:100%;max-width:280px;border:0;border-radius:10px;font-size:15px;cursor:pointer;color:#fff;font-weight:bold;background:#3b82f6}
+#menuOverlay button.danger{background:#e94560}
+#menuOverlay button.warn{background:#f59e0b}
+#menuOverlay button.gray{background:#6b7280}
+#stealFloatBtn{position:fixed;bottom:130px;right:12px;z-index:50;padding:16px 26px;background:#f59e0b;color:#fff;border:0;border-radius:12px;font-size:16px;font-weight:bold;box-shadow:0 4px 12px rgba(0,0,0,0.5);display:none;cursor:pointer}
+</style>
+</head>
+<script src="https://unpkg.com/peerjs@1.5.4/dist/peerjs.min.js"></script>
+<body>
+
+<div id="main" class="overlay">
+  <div style="font-size:32px;margin-bottom:6px">🐜</div>
+  <h1>Насекомый Баскетбол</h1>
+  <div class="sub">Пошаговый гекс-баскетбол</div>
+  <button id="mLocal" class="big-btn">Играть (локально)</button>
+  <button id="mLoad" class="big-btn">Загрузить игру</button>
+  <button id="mOnline" class="big-btn" disabled>Онлайн (скоро)</button>
+  <button id="mHelp" class="big-btn">Как играть</button>
+</div>
+
+<div id="setup" class="overlay">
+  <h2>Выбор состава (по 5 фигур)</h2>
+  <div class="team green">Зелёные: <span id="tg">—</span></div>
+  <div class="team red">Красные: <span id="tr">—</span></div>
+  <div style="font-size:12px;color:#94a3b8;margin-top:8px">Сейчас выбирают: <b id="who">Зелёные</b></div>
+  <div id="pool"></div>
+  <button id="startBtn" onclick="startGame()">Начать игру</button>
+</div>
+
+<div id="game">
+  <div id="head">
+    <span id="t">...</span>
+    <span id="s" style="font-weight:bold">0:0</span>
+    <button id="menuBtn">Меню</button>
+  </div>
+  <div id="canvasWrap">
+    <canvas id="c"></canvas>
+    <div id="figInfo"></div>
+  </div>
+  <div id="bottom">
+    <div id="act"></div>
+    <div id="log"></div>
+  </div>
+</div>
+<div id="onlineScreen" class="overlay" style="display:none;z-index:250">
+  <h2 style="margin-top:0">🌐 Онлайн игра</h2>
+  <div id="onlineStatus" style="color:#94a3b8;font-size:13px;margin-bottom:14px;min-height:20px">
+    Выбери действие
+  </div>
+  <button id="ocCreate" class="big-btn" style="background:#22c55e">Создать комнату</button>
+  <button id="ocJoin" class="big-btn" style="background:#3b82f6">Присоединиться</button>
+  <div id="ocJoinBox" style="display:none;margin-top:8px">
+    <input id="ocCodeInput" placeholder="Введи код (4 цифры)" maxlength="4"
+      style="padding:12px;font-size:18px;text-align:center;border-radius:8px;border:0;width:180px;letter-spacing:4px;font-weight:bold">
+  </div>
+  <div id="ocCode" style="display:none;font-size:32px;font-weight:bold;color:#22c55e;letter-spacing:6px;margin:12px 0">
+    ----
+  </div>
+  <button id="ocBack" class="big-btn" style="background:#6b7280;margin-top:16px">← Назад</button>
+</div>
+<div id="menuOverlay">
+  <h2 style="margin-top:0">Меню</h2>
+  <button id="mmSave">Сохранить</button>
+  <button id="mmLoad">Загрузить</button>
+  <button id="mmEnd" class="warn">Завершить ход команды</button>
+  <button id="mmNew" class="danger">Новая игра</button>
+  <button id="mmClose" class="gray">Закрыть</button>
+</div>
+
+<button id="stealFloatBtn">Отбор</button>
+<script>
+// ============================================================
+// ЧАСТЬ 2: Данные фигур + Меню + Выбор состава
+// ============================================================
+
+const F = {
+'Королева ос':{p:'PG',o:4,d:6,b:2,z:2,s:1,ab:[{n:'Имп.глаз',p:1}]},
+'Комар':{p:'PG',o:4,d:5,b:2,z:2,s:1,ab:[{n:'Фаза',c:2,m:'phase',u:1}]},
+'Муравей':{p:'PG',o:4,d:4,b:2,z:3,s:2,ab:[{n:'Крепкий',p:1}]},
+'Муха':{p:'PG',o:4,d:5,b:2,z:2,s:1,ab:[{n:'Мисдир.',p:1}]},
+'Таракан':{p:'PG',o:4,d:4,b:2,z:3,s:2,ab:[{n:'Живуч.',p:1}]},
+'Клещ':{p:'PG',o:3,d:4,b:2,z:4,s:2,ab:[{n:'Цепкий',p:1}]},
+'Оса':{p:'SG',o:3,d:3,b:6,z:2,s:1,ab:[{n:'Снайпер',p:1}]},
+'Изум.оса':{p:'SG',o:3,d:3,b:5,z:3,s:1,ab:[{n:'Дальнобой',p:1}]},
+'Светлячок':{p:'SG',o:4,d:3,b:5,z:2,s:1,ab:[{n:'Вспышка',c:1,m:'blind'}]},
+'Бабочка':{p:'SG',o:3,d:4,b:4,z:2,s:1,ab:[{n:'Порхание',p:1}]},
+'Мотылёк':{p:'SG',o:3,d:3,b:5,z:2,s:1,ab:[{n:'Фейдэвей',p:1}]},
+'Б.коровка':{p:'SG',o:3,d:3,b:5,z:3,s:1,ab:[{n:'Удача',c:1,m:'luck'}]},
+'Богомол':{p:'SF',o:4,d:3,b:3,z:4,s:3,ab:[{n:'Захват',c:1,m:'freeze'}]},
+'Кузнечик':{p:'SF',o:4,d:3,b:3,z:3,s:2,ab:[{n:'Прыжок',c:1,m:'jump'}]},
+'Стрекоза':{p:'SF',o:4,d:3,b:3,z:3,s:2,ab:[{n:'Рывок',c:1,m:'dash'}]},
+'Палочник':{p:'SF',o:4,d:3,b:3,z:4,s:3,ab:[{n:'Универсал',p:1}]},
+'Паук':{p:'SF',o:3,d:3,b:3,z:4,s:2,ab:[{n:'Сеть',c:2,m:'web'}]},
+'Б.кор.тиран':{p:'SF',o:3,d:3,b:3,z:5,s:3,ab:[{n:'Стоппер',p:1}]},
+'Жук':{p:'PF',o:3,d:2,b:2,z:4,s:5,ab:[{n:'Толчок',c:1,m:'push'}]},
+'Скарабей':{p:'PF',o:3,d:2,b:2,z:4,s:5,ab:[{n:'Толчок',c:1,m:'push'}]},
+'Паук сер.':{p:'PF',o:3,d:2,b:2,z:4,s:4,ab:[{n:'Скольж.',p:1}]},
+'Щитоносец':{p:'PF',o:3,d:2,b:2,z:6,s:4,ab:[{n:'Скрин',c:1,m:'web'}]},
+'Огн.муравей':{p:'PF',o:3,d:3,b:3,z:4,s:3,ab:[{n:'Ожог',p:1}]},
+'Королева пчёл':{p:'C',o:3,d:1,b:3,z:6,s:5,ab:[{n:'Защ.краски',p:1}]},
+'Скорпион':{p:'C',o:3,d:2,b:2,z:5,s:5,ab:[{n:'Жало',c:2,m:'sting'}]},
+'Червь':{p:'C',o:3,d:1,b:2,z:4,s:4,ab:[{n:'Живуч.',p:1}]},
+'Мокрица':{p:'C',o:3,d:1,b:2,z:5,s:4,ab:[{n:'Бокс-аут',p:1}]}};
+
+let pickingTeam = 0, teamGreen = [], teamRed = [];
+
+let fig = [], ball = null, turn = 0, sc = [0,0], sel = null, hl = [], mode = 'sel';
+let over = false, pab = null, webs = [], presses = [], holds = {};
+const hoops = [{c:4,r:0},{c:4,r:11}];
+const pA = [[4,5],[6,5],[2,5],[3,4],[5,4]];
+const pB = [[4,7],[6,7],[2,7],[3,8],[5,8]];
+
+function logMsg(m){
+  const l = document.getElementById('log');
+  if(l) l.innerHTML = m + '<br>' + l.innerHTML;
+}
+
+function showMain(){
+  document.getElementById('main').style.display = 'flex';
+  document.getElementById('setup').style.display = 'none';
+  document.getElementById('game').style.display = 'none';
+  document.getElementById('menuOverlay').style.display = 'none';
+}
+function showSetup(){
+  document.getElementById('main').style.display = 'none';
+  document.getElementById('setup').style.display = 'flex';
+  document.getElementById('game').style.display = 'none';
+  teamGreen = []; teamRed = []; pickingTeam = 0;
+  renderPool();
+  document.getElementById('startBtn').style.background = '#e94560';
+}
+function showGame(){
+  document.getElementById('main').style.display = 'none';
+  document.getElementById('setup').style.display = 'none';
+  document.getElementById('game').style.display = 'flex';
+}
+
+document.getElementById('mLocal').onclick = showSetup;
+document.getElementById('mLoad').onclick = function(){
+  const raw = localStorage.getItem('insectBall');
+  if(!raw){ alert('Нет сохранения'); return; }
+  try {
+    const d = JSON.parse(raw);
+    fig = d.fig; ball = d.ball; turn = d.turn; sc = d.sc || [0,0]; over = !!d.over;
+    webs = d.webs || []; presses = d.presses || []; holds = d.holds || {};
+    teamGreen = d.teamGreen || []; teamRed = d.teamRed || [];
+    fig.forEach(function(f){ f.px = undefined; f.py = undefined; });
+    sel = null; hl = []; mode = 'sel'; pab = null;
+    showGame();
+    if(typeof setupCanvas === 'function') setupCanvas();
+    if(typeof initGameUI === 'function') initGameUI();
+    logMsg('Игра загружена');
+  } catch(e){ alert('Ошибка: ' + e.message); }
+};
+document.getElementById('mHelp').onclick = function(){
+  alert('КАК ИГРАТЬ:\n\n1. Собери команду из 5 фигур.\n\n2. Ходы по очереди.\n\n3. Выбери фигуру и действуй кнопками внизу.\n\n4. Победа: 21 очко.');
+};
+
+function renderPool(){
+  const pool = document.getElementById('pool');
+  pool.innerHTML = '';
+  Object.keys(F).forEach(function(n){
+    const used = teamGreen.indexOf(n) >= 0 || teamRed.indexOf(n) >= 0;
+    const b = document.createElement('button');
+    b.textContent = F[n].p + ' ' + n;
+    b.disabled = used;
+    b.onclick = function(){
+      if(pickingTeam === 0 && teamGreen.length < 5){
+        teamGreen.push(n);
+        if(teamGreen.length >= 5) pickingTeam = 1;
+      } else if(pickingTeam === 1 && teamRed.length < 5){
+        teamRed.push(n);
+      }
+      renderPool();
+    };
+    pool.appendChild(b);
+  });
+  const tg = document.getElementById('tg');
+  tg.innerHTML = teamGreen.length
+    ? teamGreen.map(function(n,i){ return '<span class="chip g" data-g="' + i + '">' + n + ' ×</span>'; }).join('')
+    : '—';
+  tg.querySelectorAll('[data-g]').forEach(function(el){
+    el.onclick = function(){
+      teamGreen.splice(parseInt(el.getAttribute('data-g')), 1);
+      pickingTeam = 0;
+      renderPool();
+    };
+  });
+  const tr = document.getElementById('tr');
+  tr.innerHTML = teamRed.length
+    ? teamRed.map(function(n,i){ return '<span class="chip r" data-r="' + i + '">' + n + ' ×</span>'; }).join('')
+    : '—';
+  tr.querySelectorAll('[data-r]').forEach(function(el){
+    el.onclick = function(){
+      teamRed.splice(parseInt(el.getAttribute('data-r')), 1);
+      pickingTeam = 1;
+      renderPool();
+    };
+  });
+  document.getElementById('who').textContent = pickingTeam === 0 ? 'Зелёные' : 'Красные';
+  const sb = document.getElementById('startBtn');
+  sb.style.background = (teamGreen.length === 5 && teamRed.length === 5) ? '#22c55e' : '#e94560';
+}
+
+function startGame(){
+  if(teamGreen.length < 5 || teamRed.length < 5){ alert('Нужно по 5 фигур'); return; }
+  showGame();
+  if(typeof initGame === 'function') initGame(teamGreen, teamRed);
+  else logMsg('Ожидание части 3...');
+}
+
+showMain();
+// ============================================================
+// ЧАСТЬ 3: Поле, отрисовка, движение, клики
+// ============================================================
+
+const S = Math.min(28, Math.floor((window.innerWidth - 36) / 16.45)), C = 9, R = 12, W = Math.sqrt(3) * S, H = 1.5 * S;
+const cv = document.getElementById('c');
+const x = cv.getContext('2d');
+let animating = false;
+let fx = [];
+
+function setupCanvas(){
+  cv.width = Math.ceil(W * C + W/2 + 20);
+  cv.height = Math.ceil(H * (R-1) + S * 2 + 20);
+}
+
+function cen(c, r){
+  return {x: W * (c + 0.5 * (r & 1)) + W/2 + 10, y: H * r + S + 10};
+}
+function nb(c, r){
+  const o = r & 1;
+  const d = o
+    ? [[1,0],[-1,0],[0,-1],[1,-1],[0,1],[1,1]]
+    : [[1,0],[-1,0],[-1,-1],[0,-1],[-1,1],[0,1]];
+  return d.map(function(a){ return [c+a[0], r+a[1]]; })
+    .filter(function(a){ return a[0]>=0 && a[0]<C && a[1]>=0 && a[1]<R; });
+}
+function toAx(c, r){ return {q: c - (r - (r&1))/2, r: r}; }
+function toOff(q, r){ return {c: q + (r - (r&1))/2, r: r}; }
+function dist(c1, r1, c2, r2){
+  const a = toAx(c1, r1), b = toAx(c2, r2);
+  return Math.max(Math.abs(a.q - b.q), Math.abs(a.r - b.r), Math.abs(-a.q - a.r + b.q + b.r));
+}
+
+function figAt(c, r){ return fig.find(function(f){ return f.c === c && f.r === r; }); }
+function byId(i){ return fig.find(function(f){ return f.i === i; }); }
+
+function initGame(teamA, teamB){
+  fig = []; ball = null; turn = 0; sc = [0,0]; sel = null; hl = [];
+  mode = 'sel'; over = false; pab = null; webs = []; presses = []; holds = {};
+  fx = [];
+  teamA.forEach(function(n, i){
+    const d = F[n];
+    fig.push({i:fig.length, n:n, t:0, p:d.p, mo:d.o, o:d.o, d:d.d, b:d.b, z:d.z, s:d.s,
+      ab:d.ab||[], c:pA[i][0], r:pA[i][1], a:false, fr:0, bl:0, us:[], mv:false});
+  });
+  teamB.forEach(function(n, i){
+    const d = F[n];
+    fig.push({i:fig.length, n:n, t:1, p:d.p, mo:d.o, o:d.o, d:d.d, b:d.b, z:d.z, s:d.s,
+      ab:d.ab||[], c:pB[i][0], r:pB[i][1], a:false, fr:0, bl:0, us:[], mv:false});
+  });
+  ball = 0;
+  logMsg('Игра! Мяч у ' + fig[0].n);
+  setupCanvas();
+  ui(); requestAnim();
+}
+
+function render(){
+  x.clearRect(0, 0, cv.width, cv.height);
+
+  for(let r = 0; r < R; r++) for(let c = 0; c < C; c++){
+    const p = cen(c, r);
+    x.beginPath();
+    for(let i = 0; i < 6; i++){
+      const a = Math.PI/180 * (60*i - 30);
+      const px = p.x + S*Math.cos(a), py = p.y + S*Math.sin(a);
+      if(i) x.lineTo(px, py); else x.moveTo(px, py);
+    }
+    x.closePath();
+    const dt = Math.min(dist(c,r,4,0), dist(c,r,4,11));
+    x.fillStyle = dt === 0 ? '#3b0f4a' : dt <= 1 ? '#3a2060' : dt <= 2 ? '#2a4080' : dt <= 3 ? '#1e4b7a' : '#0f3460';
+    if(webs.some(function(w){ return w.c===c && w.r===r; })) x.fillStyle = '#4c1d95';
+    const h = hl.find(function(hh){ return hh.c===c && hh.r===r; });
+    if(h) x.fillStyle = h.m === 'enemy' ? '#dc2626'
+      : h.m === 'jump' ? '#a855f7'
+      : h.m === 'phase' ? '#8b5cf6'
+      : h.m === 'dash' ? '#06b6d4'
+      : h.m === 'web' ? '#7c3aed'
+      : '#22c55e';
+    x.fill();
+    x.strokeStyle = '#0a0a1a';
+    x.lineWidth = 1;
+    x.stroke();
+  }
+
+  hoops.forEach(function(h, i){
+    const p = cen(h.c, h.r);
+    x.beginPath();
+    x.arc(p.x, p.y, 6, 0, 6.3);
+    x.strokeStyle = i ? '#4ade80' : '#f87171';
+    x.lineWidth = 3;
+    x.stroke();
+  });
+
+  presses.forEach(function(pr){
+    const c = cen(pr.c, pr.r);
+    x.beginPath();
+    x.arc(c.x, c.y, S*0.7, 0, 6.3);
+    x.strokeStyle = pr.team ? '#dc2626' : '#16a34a';
+    x.lineWidth = 3;
+    x.setLineDash([4,3]);
+    x.stroke();
+    x.setLineDash([]);
+  });
+
+  fig.forEach(function(f){
+    const base = cen(f.c, f.r);
+    const px = (f.px !== undefined) ? f.px : base.x;
+    const py = (f.py !== undefined) ? f.py : base.y;
+    x.beginPath();
+    x.arc(px, py, S*0.62, 0, 6.3);
+    let col = f.t ? '#ef4444' : '#22c55e';
+    if(f.a) col = f.t ? '#7f1d1d' : '#166534';
+    if(f.fr > 0) col = '#0ea5e9';
+    if(f.bl > 0) col = '#a78bfa';
+    x.fillStyle = col;
+    x.fill();
+    x.strokeStyle = '#000';
+    x.lineWidth = 2;
+    x.stroke();
+    if(sel === f.i){
+      x.beginPath();
+      x.arc(px, py, S*0.72, 0, 6.3);
+      x.strokeStyle = '#fbbf24';
+      x.lineWidth = 3;
+      x.stroke();
+    }
+    x.fillStyle = '#fff';
+    x.font = 'bold 9px sans-serif';
+    x.textAlign = 'center';
+    x.textBaseline = 'middle';
+    x.fillText(f.p, px, py);
+    if(ball === f.i){
+      x.beginPath();
+      x.arc(px + S*0.55, py - S*0.55, 5, 0, 6.3);
+      x.fillStyle = '#f97316';
+      x.fill();
+      x.strokeStyle = '#fff';
+      x.stroke();
+    }
+    if(holds[f.i]){
+      x.fillStyle = '#fbbf24';
+      x.font = 'bold 14px sans-serif';
+      x.fillText('*', px - S*0.55, py - S*0.55);
+    }
+    if(f.fr > 0){
+      x.fillStyle = '#fff';
+      x.font = 'bold 9px sans-serif';
+      x.fillText('F', px, py + 13);
+    }
+    if(f.bl > 0){
+      x.fillStyle = '#fff';
+      x.font = 'bold 9px sans-serif';
+      x.fillText('B', px, py + 13);
+    }
+  });
+
+  // FX поверх
+  fx.forEach(function(e){
+    if(e.type === 'ball'){
+      x.beginPath();
+      x.arc(e.x, e.y, 8, 0, 6.3);
+      x.fillStyle = '#f97316';
+      x.fill();
+      x.strokeStyle = '#fff';
+      x.lineWidth = 2;
+      x.stroke();
+    } else if(e.type === 'text'){
+      x.globalAlpha = Math.max(0, e.life / 40);
+      x.fillStyle = e.color || '#fff';
+      x.font = 'bold ' + (e.size || 18) + 'px sans-serif';
+      x.textAlign = 'center';
+      x.textBaseline = 'middle';
+      x.fillText(e.text, e.x, e.y);
+      x.globalAlpha = 1;
+    }
+  });
+}
+
+function tick(){
+  let any = false;
+  fig.forEach(function(f){
+    const tgt = cen(f.c, f.r);
+    if(f.px === undefined){ f.px = tgt.x; f.py = tgt.y; return; }
+    const dx = tgt.x - f.px, dy = tgt.y - f.py;
+    if(Math.abs(dx) > 0.5 || Math.abs(dy) > 0.5){
+      f.px += dx * 0.22;
+      f.py += dy * 0.22;
+      any = true;
+    } else {
+      f.px = tgt.x;
+      f.py = tgt.y;
+    }
+  });
+  render();
+  if(any) requestAnimationFrame(tick);
+  else animating = false;
+}
+
+function requestAnim(){
+  if(!animating){
+    animating = true;
+    requestAnimationFrame(tick);
+  }
+}
+function draw(){ requestAnim(); }
+
+function popText(text, px, py, color, size){
+  const t = {type:'text', text:text, x:px, y:py, color:color, size:size, life:40};
+  fx.push(t);
+  let fr = 0;
+  function step(){
+    fr++;
+    t.y -= 0.9;
+    t.life = 40 - fr;
+    render();
+    if(fr < 40) requestAnimationFrame(step);
+    else fx = fx.filter(function(e){ return e !== t; });
+  }
+  requestAnimationFrame(step);
+}
+
+function flyBall(x1, y1, x2, y2, onDone){
+  const b = {type:'ball', x:x1, y:y1, tx:x2, ty:y2};
+  fx.push(b);
+  let fr = 0;
+  function step(){
+    fr++;
+    b.x += (b.tx - b.x) * 0.22;
+    b.y += (b.ty - b.y) * 0.22;
+    render();
+    if(fr < 22) requestAnimationFrame(step);
+    else { fx = fx.filter(function(e){ return e !== b; }); if(onDone) onDone(); }
+  }
+  requestAnimationFrame(step);
+}
+
+function reHL(){
+  hl = [];
+  if(sel === null) return;
+  const f = byId(sel);
+  if(!f) return;
+  hl = nb(f.c, f.r)
+    .filter(function(a){ return !figAt(a[0], a[1]); })
+    .map(function(a){ return {c:a[0], r:a[1], m:'move'}; });
+}
+
+function handleClick(col, row){
+  // Обработка режимов ability/pass/press — в следующих частях
+  if(mode === 'ability' || mode === 'pass' || mode === 'press'){
+    if(typeof handleModeClick === 'function'){ handleModeClick(col, row); }
+    return;
+  }
+
+  const fa = figAt(col, row);
+  if(fa && fa.t === turn && !fa.a){
+    if(fa.fr > 0){ logMsg(fa.n + ' обездвижен'); return; }
+    if(sel !== null){
+      const cur = byId(sel);
+      if(cur && cur.o < cur.mo) return;
+    }
+    sel = fa.i;
+    reHL();
+    ui(); draw();
+    return;
+  }
+
+  if(sel !== null && hl.some(function(h){ return h.c === col && h.r === row; })){
+    const f = byId(sel);
+    let cost = (ball === f.i) ? 2 : 1;
+    if(webs.some(function(w){ return w.c === col && w.r === row; })) cost += 1;
+    if(presses.some(function(p){ return p.c === col && p.r === row && p.team !== f.t; })) cost += 1;
+    if(f.o < cost){ logMsg('Недостаточно ОД'); return; }
+    f.c = col; f.r = row; f.o -= cost; f.mv = true;
+    if(f.o <= 0) end();
+    else { reHL(); ui(); draw(); }
+    return;
+  }
+
+  if(sel !== null){
+    const cur = byId(sel);
+    if(cur && cur.o === cur.mo){
+      sel = null; hl = [];
+      ui(); draw();
+    }
+  }
+}
+
+cv.addEventListener('click', function(e){
+  if(over) return;
+  const r = cv.getBoundingClientRect();
+  const px = (e.clientX - r.left) * (cv.width / r.width);
+  const py = (e.clientY - r.top) * (cv.height / r.height);
+  let cl = null, bd = S * 0.9;
+  for(let rr = 0; rr < R; rr++) for(let cc = 0; cc < C; cc++){
+    const p = cen(cc, rr);
+    const d = Math.hypot(px - p.x, py - p.y);
+    if(d < bd){ bd = d; cl = {c:cc, r:rr}; }
+  }
+  if(cl) handleClick(cl.c, cl.r);
+});
+
+// Заглушки — переопределяются в части 4
+function ui(){
+  document.getElementById('t').textContent = over ? 'Конец' : (turn ? 'Ход Красных' : 'Ход Зелёных');
+  document.getElementById('s').textContent = sc[0] + ':' + sc[1];
+  const act = document.getElementById('act');
+  act.innerHTML = '';
+  if(sel === null){
+    const info = document.getElementById('figInfo');
+    if(info) info.style.display = 'none';
+    return;
+  }
+  const f = byId(sel);
+  if(!f) return;
+  const info = document.getElementById('figInfo');
+  let html = '<b>' + f.n + '</b> (' + f.p + ')<br>ОД: ' + f.o + '/' + f.mo +
+    '<br>Дри: ' + f.d + '  Брос: ' + f.b + '<br>Защ: ' + f.z + '  Сила: ' + f.s;
+  if(f.ab && f.ab.length){
+    html += '<br><br>';
+    f.ab.forEach(function(a){
+      html += '<span class="ab">' + a.n + '</span> — ' + (a.p ? 'пассив' : a.c + ' ОД') + '<br>';
+    });
+  }
+  info.innerHTML = html;
+  info.style.display = 'block';
+}
+
+function end(){
+  if(sel === null) return;
+  const f = byId(sel);
+  f.a = true; f.o = 0; f.mv = false;
+  sel = null; hl = []; mode = 'sel'; pab = null;
+  const o = 1 - turn;
+  const oH = fig.some(function(g){ return g.t === o && !g.a; });
+  const cH = fig.some(function(g){ return g.t === turn && !g.a; });
+  if(oH){
+    turn = o;
+    fig.forEach(function(g){ if(g.fr > 0 && g.t === o && !g.a) g.a = true; });
+  } else if(cH){
+    // остаёмся
+  } else {
+    fig.forEach(function(g){
+      g.a = false; g.o = g.mo;
+      if(g.fr > 0) g.fr--;
+      if(g.bl > 0) g.bl--;
+    });
+    turn = 1 - turn;
+    presses = []; holds = {};
+    logMsg('--- Раунд ---');
+  }
+  ui(); draw();
+}
+
+// При загрузке сохранения — пересобрать UI
+function initGameUI(){
+  sel = null; hl = []; mode = 'sel';
+  ui(); draw();
+}
+
+setupCanvas();
+// ============================================================
+// ЧАСТЬ 4: Кнопки действий + Меню в игре
+// ============================================================
+
+// ----- НАСТОЯЩИЙ UI (заменяет заглушку из ч.3) -----
+ui = function(){
+  document.getElementById('t').textContent = over ? 'Конец'
+    : (turn ? 'Ход Красных' : 'Ход Зелёных');
+  document.getElementById('s').textContent = sc[0] + ':' + sc[1];
+
+  const info = document.getElementById('figInfo');
+  const act = document.getElementById('act');
+  act.innerHTML = '';
+
+  if(over){
+    if(info) info.style.display = 'none';
+    const b = document.createElement('button');
+    b.textContent = 'Заново';
+    b.onclick = function(){ location.reload(); };
+    act.appendChild(b);
+    return;
+  }
+
+  if(sel === null){
+    if(info) info.style.display = 'none';
+    addEndTurnButton(act);
+    return;
+  }
+
+  const f = byId(sel);
+  if(!f) return;
+
+  let html = '<b>' + f.n + '</b> (' + f.p + ')<br>ОД: ' + f.o + '/' + f.mo +
+    '<br>Дри: ' + f.d + '  Брос: ' + f.b + '<br>Защ: ' + f.z + '  Сила: ' + f.s;
+  if(f.ab && f.ab.length){
+    html += '<br><br>';
+    f.ab.forEach(function(a){
+      html += '<span class="ab">' + a.n + '</span> — ' +
+        (a.p ? 'пассив' : a.c + ' ОД') + '<br>';
+    });
+  }
+  if(ball !== null && ball !== f.i){
+    const bh = byId(ball);
+    if(bh && bh.t !== f.t){
+      html += '<br><span style="color:#fbbf24">До мяча: ' +
+        dist(f.c, f.r, bh.c, bh.r) + '</span>';
+    }
+  }
+  info.innerHTML = html;
+  info.style.display = 'block';
+
+  if(f.t !== turn || f.a){
+    addEndTurnButton(act);
+    return;
+  }
+
+  // Способности
+  if(mode === 'ability' && pab){
+    const cb = document.createElement('button');
+    cb.textContent = 'Отмена';
+    cb.onclick = function(){
+      mode = 'sel'; pab = null; hl = [];
+      reHL(); ui(); draw();
+    };
+    act.appendChild(cb);
+    addEndTurnButton(act);
+    return;
+  }
+
+  // Пас — список союзников
+  if(mode === 'pass'){
+    const cb = document.createElement('button');
+    cb.textContent = 'Отмена';
+    cb.onclick = function(){ mode = 'sel'; hl = []; reHL(); ui(); draw(); };
+    act.appendChild(cb);
+    const allies = fig.filter(function(g){
+      return g.t === f.t && g.i !== f.i && dist(f.c, f.r, g.c, g.r) <= 3;
+    });
+    allies.forEach(function(a){
+      const b = document.createElement('button');
+      b.textContent = '→ ' + a.n;
+      b.style.background = '#3b82f6';
+      b.onclick = function(){ doPass(a.i); };
+      act.appendChild(b);
+    });
+    addEndTurnButton(act);
+    return;
+  }
+
+  // Давление — отмена
+  if(mode === 'press'){
+    const cb = document.createElement('button');
+    cb.textContent = 'Отмена';
+    cb.onclick = function(){ mode = 'sel'; hl = []; reHL(); ui(); draw(); };
+    act.appendChild(cb);
+    addEndTurnButton(act);
+    return;
+  }
+
+  // Основные действия
+  const hasBall = ball === f.i;
+  const hoop = hoops[1 - f.t];
+  const dHoop = dist(f.c, f.r, hoop.c, hoop.r);
+
+  if(hasBall){
+    if(f.o >= 2){
+      const b = document.createElement('button');
+      b.textContent = 'Бросок';
+      b.onclick = doShoot;
+      act.appendChild(b);
+      if(dHoop <= 1){
+        const b2 = document.createElement('button');
+        b2.textContent = 'Данк';
+        b2.onclick = doDunk;
+        act.appendChild(b2);
+      }
+    }
+    if(f.o >= 1){
+      const b = document.createElement('button');
+      b.textContent = 'Пас';
+      b.style.background = '#3b82f6';
+      b.onclick = function(){
+        mode = 'pass';
+        hl = fig.filter(function(g){
+          return g.t === f.t && g.i !== f.i && dist(f.c, f.r, g.c, g.r) <= 3;
+        }).map(function(g){ return {c:g.c, r:g.r, m:'pass', id:g.i}; });
+        ui(); draw();
+      };
+      act.appendChild(b);
+    }
+    if(!holds[f.i]){
+      const b = document.createElement('button');
+      b.textContent = 'Держать';
+      b.onclick = function(){
+        holds[f.i] = true;
+        logMsg(f.n + ' держит мяч');
+        ui(); draw();
+      };
+      act.appendChild(b);
+    } else {
+      const b = document.createElement('button');
+      b.textContent = 'Отпустить';
+      b.onclick = function(){
+        delete holds[f.i];
+        logMsg(f.n + ' отпустил мяч');
+        ui(); draw();
+      };
+      act.appendChild(b);
+    }
+  } else {
+    // Отбор
+    const bh = byId(ball);
+    if(bh && bh.t !== f.t && f.o >= 1 && dist(f.c, f.r, bh.c, bh.r) === 1){
+      const b = document.createElement('button');
+      b.textContent = 'Отбор';
+      b.className = 'stl';
+      b.onclick = doSteal;
+      act.appendChild(b);
+    }
+    // Опека
+    const enemiesAdj = fig.filter(function(g){
+      return g.t !== f.t && dist(f.c, f.r, g.c, g.r) === 1;
+    });
+    if(enemiesAdj.length && f.o >= 1){
+      const b = document.createElement('button');
+      b.textContent = 'Опека(1)';
+      b.onclick = doMark;
+      act.appendChild(b);
+    }
+  }
+
+  // Давление
+  if(f.o >= 1){
+    const b = document.createElement('button');
+    b.textContent = 'Давление(1)';
+    b.onclick = function(){
+      mode = 'press';
+      hl = nb(f.c, f.r)
+        .filter(function(a){
+          return !figAt(a[0], a[1]) && !presses.some(function(p){ return p.c === a[0] && p.r === a[1]; });
+        })
+        .map(function(a){ return {c:a[0], r:a[1], m:'web'}; });
+      ui(); draw();
+    };
+    act.appendChild(b);
+  }
+
+  // Способности
+  (f.ab || []).forEach(function(ab){
+    if(ab.p) return;
+    if(ab.u && f.us.indexOf(ab.n) >= 0) return;
+    if(f.o < ab.c) return;
+    const b = document.createElement('button');
+    b.textContent = '+ ' + ab.n + '(' + ab.c + ')';
+    b.className = 'abi';
+    b.onclick = function(){ startAb(ab); };
+    act.appendChild(b);
+  });
+
+  addEndTurnButton(act);
+};
+
+function addEndTurnButton(act){
+  if(over) return;
+  const b = document.createElement('button');
+  b.textContent = 'Конец хода';
+  b.className = 'end';
+  b.onclick = endTurn;
+  act.appendChild(b);
+}
+
+// ----- ДЕЙСТВИЯ -----
+
+function endTurn(){
+  if(over) return;
+  fig.forEach(function(f){
+    if(f.t === turn && !f.a){ f.a = true; f.o = 0; f.mv = false; }
+  });
+  sel = null; hl = []; mode = 'sel'; pab = null;
+  const o = 1 - turn;
+  const oH = fig.some(function(g){ return g.t === o && !g.a; });
+  if(oH){
+    turn = o;
+    logMsg('Ход ' + (turn ? 'Красных' : 'Зелёных'));
+  } else {
+    fig.forEach(function(g){
+      g.a = false; g.o = g.mo;
+      if(g.fr > 0) g.fr--;
+      if(g.bl > 0) g.bl--;
+    });
+    turn = 1 - turn;
+    presses = []; holds = {};
+    logMsg('--- Раунд ---');
+  }
+  ui(); draw();
+}
+
+function doSteal(){
+  const f = byId(sel);
+  const bh = byId(ball);
+  if(!f || !bh || f.o < 1) return;
+  if(dist(f.c, f.r, bh.c, bh.r) !== 1) return;
+  f.o -= 1;
+  const atk = f.z + Math.floor(Math.random()*6) + 1;
+  const def = bh.d + Math.floor(Math.random()*6) + 1 + (holds[bh.i] ? 2 : 0);
+  logMsg('Отбор ' + f.n + ' ' + atk + ' vs ' + bh.n + ' ' + def);
+  if(atk >= def){
+    ball = f.i;
+    delete holds[bh.i];
+    logMsg('✓ Мяч у ' + f.n);
+    popText('ОТБОР!', cen(f.c, f.r).x, cen(f.c, f.r).y - 25, '#22c55e', 18);
+  } else {
+    logMsg('✗ Не удалось');
+    popText('Мимо', cen(f.c, f.r).x, cen(f.c, f.r).y - 25, '#ef4444', 16);
+  }
+  if(f.o <= 0) end(); else { reHL(); ui(); draw(); }
+}
+
+function doMark(){
+  const f = byId(sel);
+  if(!f || f.o < 1) return;
+  const enemiesAdj = fig.filter(function(g){
+    return g.t !== f.t && dist(f.c, f.r, g.c, g.r) === 1;
+  });
+  if(!enemiesAdj.length){ logMsg('Рядом нет врагов'); return; }
+  // Опека на первого врага
+  f.o -= 1;
+  const target = enemiesAdj[0];
+  holds['mark_' + target.i] = f.i;
+  logMsg('Опека: ' + f.n + ' держит ' + target.n);
+  if(f.o <= 0) end(); else { reHL(); ui(); draw(); }
+}
+
+function doPass(targetId){
+  const f = byId(sel);
+  if(!f || ball !== f.i || f.o < 1) return;
+  const t = byId(targetId);
+  // Перехват
+  let best = null, bestRoll = 0;
+  fig.forEach(function(g){
+    if(g.t === f.t) return;
+    const minD = Math.min(dist(g.c, g.r, f.c, f.r), dist(g.c, g.r, t.c, t.r));
+    if(minD > 3) return;
+    const bonus = minD <= 1 ? 2 : 0;
+    const roll = g.z + Math.floor(Math.random()*6) + 1 + bonus;
+    if(roll > bestRoll){ bestRoll = roll; best = g; }
+  });
+  if(best){
+    const passRoll = f.d + Math.floor(Math.random()*6) + 1;
+    logMsg('Перехват ' + best.n + ' ' + bestRoll + ' vs пас ' + passRoll);
+    if(bestRoll >= passRoll){
+      f.o -= 1;
+      ball = best.i;
+      delete holds[f.i];
+      logMsg('ПЕРЕХВАТ! ' + best.n);
+      mode = 'sel'; hl = [];
+      if(f.o <= 0) end(); else { reHL(); ui(); draw(); }
+      return;
+    }
+  }
+  ball = targetId;
+  f.o -= 1;
+  logMsg('Пас ' + f.n + ' → ' + t.n);
+  mode = 'sel'; hl = [];
+  if(f.o <= 0) end(); else { reHL(); ui(); draw(); }
+}
+
+function doShoot(){
+  const f = byId(sel);
+  if(!f || ball !== f.i || f.o < 2) return;
+  const hoop = hoops[1 - f.t];
+  const d = dist(f.c, f.r, hoop.c, hoop.r);
+  const sc_ = cen(f.c, f.r);
+  const hp = cen(hoop.c, hoop.r);
+  f.o -= 2;
+
+  // Блок
+  const blocker = checkBlock(f);
+  if(blocker){
+    popText('БЛОК!', sc_.x, sc_.y - 30, '#ef4444', 22);
+    logMsg('Бросок заблокирован ' + blocker.n);
+    delete holds[f.i];
+    ball = blocker.i;
+    setTimeout(function(){ end(); }, 400);
+    return;
+  }
+
+  let tgt, pt, sn;
+  if(d <= 1){ tgt = 6; pt = 2; sn = 'Лэй'; }
+  else if(d <= 3){ tgt = 8; pt = 2; sn = 'Мид'; }
+  else { tgt = 10; pt = 3; sn = 'Трёха'; }
+
+  let pen = 0;
+  fig.forEach(function(o){
+    if(o.t !== f.t && dist(o.c, o.r, f.c, f.r) <= 1) pen = 2;
+  });
+  const qb = fig.find(function(g){ return g.n === 'Королева пчёл' && g.t !== f.t; });
+  if(qb){
+    const qh = hoops[1 - qb.t];
+    if(dist(f.c, f.r, qh.c, qh.r) <= 2){ pen += 1; logMsg('Защ.краски -1'); }
+  }
+  let bonus = 0;
+  if(f.ab.some(function(a){ return a.n === 'Снайпер'; }) && !f.mv){ bonus += 2; logMsg('Снайпер +2'); }
+  if(f.ab.some(function(a){ return a.n === 'Дальнобой'; }) && d >= 4){ bonus += 1; logMsg('Дальнобой +1'); }
+  if(f.bl > 0){ bonus -= 2; logMsg('Ослеплён -2'); }
+  const roll = Math.floor(Math.random()*6) + 1;
+  const tot = f.b + bonus + roll;
+  const needed = tgt + pen;
+  const win = tot >= needed;
+  logMsg(f.n + ': ' + sn + ' ' + tot + ' vs ' + needed);
+
+  ball = null;
+  flyBall(sc_.x, sc_.y, hp.x, hp.y, function(){
+    if(win){
+      popText('+' + pt, hp.x, hp.y - 22, '#22c55e', 26);
+      sc[f.t] += pt;
+      logMsg('ПОПАЛ! +' + pt);
+      setTimeout(function(){
+        if(sc[f.t] >= 21){ over = true; logMsg('Победа!'); sel = null; hl = []; ui(); draw(); return; }
+        resetPositions(f.t);
+      }, 500);
+    } else {
+      popText('Мимо', hp.x, hp.y - 22, '#ef4444', 22);
+      logMsg('Промах');
+      setTimeout(function(){ rebound(f.t); end(); }, 400);
+    }
+  });
+}
+
+function doDunk(){
+  const f = byId(sel);
+  if(!f || ball !== f.i || f.o < 2) return;
+  const hoop = hoops[1 - f.t];
+  if(dist(f.c, f.r, hoop.c, hoop.r) > 1) return;
+  const sc_ = cen(f.c, f.r);
+  const hp = cen(hoop.c, hoop.r);
+  f.o -= 2;
+
+  const blocker = checkBlock(f);
+  if(blocker){
+    popText('БЛОК!', sc_.x, sc_.y - 30, '#ef4444', 24);
+    logMsg('Данк заблокирован ' + blocker.n);
+    delete holds[f.i];
+    ball = blocker.i;
+    setTimeout(function(){ end(); }, 400);
+    return;
+  }
+
+  let pen = 0;
+  fig.forEach(function(o){
+    if(o.t !== f.t && dist(o.c, o.r, f.c, f.r) <= 1) pen = 2;
+  });
+  const roll = Math.floor(Math.random()*6) + 1;
+  const tot = f.b + 3 + roll;
+  const needed = 5 + pen;
+  const win = tot >= needed;
+  logMsg('ДАНК ' + tot + ' vs ' + needed);
+
+  ball = null;
+  flyBall(sc_.x, sc_.y, hp.x, hp.y, function(){
+    if(win){
+      popText('+2!', hp.x, hp.y - 22, '#22c55e', 28);
+      sc[f.t] += 2;
+      logMsg('ДАНК! +2');
+      setTimeout(function(){
+        if(sc[f.t] >= 21){ over = true; logMsg('Победа!'); sel = null; hl = []; ui(); draw(); return; }
+        resetPositions(f.t);
+      }, 500);
+    } else {
+      popText('Блок', hp.x, hp.y - 22, '#ef4444', 24);
+      logMsg('Заблокирован');
+      setTimeout(function(){ rebound(f.t); end(); }, 400);
+    }
+  });
+}
+
+function checkBlock(shooter){
+  const blockers = fig.filter(function(g){
+    return g.t !== shooter.t && dist(g.c, g.r, shooter.c, shooter.r) <= 2;
+  });
+  for(let i = 0; i < blockers.length; i++){
+    const b = blockers[i];
+    if(b.o < 1) continue;
+    const adj = dist(b.c, b.r, shooter.c, shooter.r) === 1;
+    const atk = b.s + Math.floor(Math.random()*6) + 1 + (adj ? 2 : 0);
+    const def = shooter.s + Math.floor(Math.random()*6) + 1;
+    logMsg('Блок ' + b.n + ' ' + atk + ' vs ' + shooter.n + ' ' + def);
+    if(atk >= def){
+      b.o = Math.max(0, b.o - 1);
+      return b;
+    }
+  }
+  return null;
+}
+
+function rebound(team){
+  const hoop = hoops[1 - team];
+  let best = null, bd = 99;
+  fig.forEach(function(f){
+    const d = dist(f.c, f.r, hoop.c, hoop.r);
+    if(d < bd){ bd = d; best = f; }
+  });
+  ball = best.i;
+  logMsg('Подбор: ' + best.n);
+}
+
+function resetPositions(scoringTeam){
+  fig.filter(function(f){ return f.t === 0; }).forEach(function(f, i){
+    f.c = pA[i][0]; f.r = pA[i][1];
+    f.a = false; f.o = f.mo; f.fr = 0; f.bl = 0; f.us = []; f.mv = false;
+    f.px = undefined; f.py = undefined;
+  });
+  fig.filter(function(f){ return f.t === 1; }).forEach(function(f, i){
+    f.c = pB[i][0]; f.r = pB[i][1];
+    f.a = false; f.o = f.mo; f.fr = 0; f.bl = 0; f.us = []; f.mv = false;
+    f.px = undefined; f.py = undefined;
+  });
+  const opp = 1 - scoringTeam;
+  const pg = fig.find(function(f){ return f.t === opp && f.p === 'PG'; }) ||
+             fig.find(function(f){ return f.t === opp; });
+  ball = pg.i;
+  webs = []; presses = []; holds = {};
+  turn = opp; sel = null; hl = []; mode = 'sel'; pab = null;
+  logMsg('Сброс. Мяч у ' + pg.n);
+  ui(); draw();
+}
+
+// ----- СПОСОБНОСТИ -----
+
+function startAb(ab){
+  const f = byId(sel);
+  if(!f || f.o < ab.c) return;
+  pab = ab;
+  mode = 'ability';
+  hl = [];
+  if(ab.m === 'jump' || ab.m === 'phase' || ab.m === 'dash'){
+    const rg = ab.m === 'jump' ? 3 : 2;
+    for(let r = 0; r < R; r++) for(let c = 0; c < C; c++){
+      if(c === f.c && r === f.r) continue;
+      if(figAt(c, r)) continue;
+      const d = dist(f.c, f.r, c, r);
+      if(d >= 1 && d <= rg) hl.push({c:c, r:r, m:ab.m});
+    }
+  } else if(ab.m === 'web'){
+    for(let r = 0; r < R; r++) for(let c = 0; c < C; c++){
+      const d = dist(f.c, f.r, c, r);
+      if(d >= 1 && d <= 2 && !figAt(c, r) && !webs.some(function(w){ return w.c === c && w.r === r; })){
+        hl.push({c:c, r:r, m:'web'});
+      }
+    }
+  } else if(ab.m === 'push' || ab.m === 'blind' || ab.m === 'freeze' || ab.m === 'sting' || ab.m === 'luck'){
+    fig.forEach(function(g){
+      if(g.t !== f.t && dist(f.c, f.r, g.c, g.r) === 1){
+        hl.push({c:g.c, r:g.r, m:'enemy', id:g.i});
+      }
+    });
+  }
+  ui(); draw();
+}
+
+function handleModeClick(col, row){
+  const f = byId(sel);
+  if(!f) return;
+  if(mode === 'press'){
+    if(hl.some(function(h){ return h.c === col && h.r === row; })){
+      if(f.o < 1) return;
+      f.o -= 1;
+      presses.push({c:col, r:row, team:f.t, owner:f.i});
+      logMsg('Давление: ' + f.n);
+      mode = 'sel'; hl = [];
+      if(f.o <= 0) end(); else { reHL(); ui(); draw(); }
+    } else {
+      mode = 'sel'; hl = []; reHL(); ui(); draw();
+    }
+    return;
+  }
+  if(mode === 'pass'){
+    const h = hl.find(function(hh){ return hh.c === col && hh.r === row; });
+    if(h && h.id !== undefined) doPass(h.id);
+    else { mode = 'sel'; hl = []; reHL(); ui(); draw(); }
+    return;
+  }
+  if(mode === 'ability'){
+    const t = hl.find(function(hh){ return hh.c === col && hh.r === row; });
+    if(t) execAb(t);
+    else { mode = 'sel'; pab = null; hl = []; reHL(); ui(); draw(); }
+    return;
+  }
+}
+
+function execAb(t){
+  const f = byId(sel);
+  if(!f || !pab) return;
+
+  if(t.m === 'jump' || t.m === 'phase' || t.m === 'dash'){
+    f.c = t.c; f.r = t.r; f.o -= pab.c; f.mv = true;
+    if(pab.u) f.us.push(pab.n);
+    logMsg(f.n + ': ' + pab.n);
+  } else if(t.m === 'web'){
+    webs.push({c:t.c, r:t.r});
+    f.o -= pab.c;
+    logMsg('Сеть на гексе');
+  } else if(t.m === 'enemy'){
+    const e = byId(t.id);
+    if(pab.m === 'push'){
+      const a = toAx(f.c, f.r), b = toAx(e.c, e.r);
+      const dq = Math.sign(b.q - a.q) || (Math.random() < 0.5 ? 1 : -1);
+      const dr = Math.sign(b.r - a.r) || (Math.random() < 0.5 ? 1 : -1);
+      const tp = toOff(b.q + dq, b.r + dr);
+      if(tp.c < 0 || tp.c >= C || tp.r < 0 || tp.r >= R || figAt(tp.c, tp.r)){
+        logMsg('Нет места для толчка');
+      } else {
+        const r1 = f.s + Math.floor(Math.random()*6) + 1;
+        const r2 = e.s + Math.floor(Math.random()*6) + 1;
+        logMsg('Толчок ' + r1 + ' vs ' + r2);
+        if(r1 > r2){
+          e.c = tp.c; e.r = tp.r; e.px = undefined; e.py = undefined;
+          logMsg('✓ Отброшен');
+        } else logMsg('✗ Не вышло');
+      }
+      f.o -= pab.c;
+    } else if(pab.m === 'blind'){
+      e.bl = 1; f.o -= pab.c; logMsg(f.n + ' ослепил ' + e.n);
+    } else if(pab.m === 'freeze'){
+      e.fr = 1; f.o -= pab.c; logMsg(f.n + ' захватил ' + e.n);
+    } else if(pab.m === 'sting'){
+      e.o = Math.max(0, e.o - 2); f.o -= pab.c; logMsg(f.n + ': -2 ОД');
+    } else if(pab.m === 'luck'){
+      f.o -= pab.c; logMsg('Удача активирована');
+    }
+  }
+
+  pab = null; mode = 'sel'; hl = [];
+  if(f.o <= 0) end(); else { reHL(); ui(); draw(); }
+}
+
+// ----- МЕНЮ В ИГРЕ -----
+
+document.getElementById('menuBtn').onclick = function(){
+  document.getElementById('menuOverlay').style.display = 'flex';
+};
+document.getElementById('mmClose').onclick = function(){
+  document.getElementById('menuOverlay').style.display = 'none';
+};
+document.getElementById('mmSave').onclick = function(){
+  try {
+    const data = {
+      fig: fig.map(function(f){
+        const o = {};
+        for(const k in f){ if(k !== 'px' && k !== 'py') o[k] = f[k]; }
+        return o;
+      }),
+      ball: ball, turn: turn, sc: sc, over: over,
+      webs: webs, presses: presses, holds: holds,
+      teamGreen: teamGreen, teamRed: teamRed
+    };
+    localStorage.setItem('insectBall', JSON.stringify(data));
+    logMsg('Игра сохранена');
+    document.getElementById('menuOverlay').style.display = 'none';
+  } catch(e){ alert('Ошибка сохранения: ' + e.message); }
+};
+document.getElementById('mmLoad').onclick = function(){
+  document.getElementById('mLoad').onclick();
+};
+document.getElementById('mmEnd').onclick = function(){
+  document.getElementById('menuOverlay').style.display = 'none';
+  endTurn();
+};
+document.getElementById('mmNew').onclick = function(){
+  if(!confirm('Начать новую игру?')) return;
+  document.getElementById('menuOverlay').style.display = 'none';
+  showMain();
+};
+// ============================================================
+// ЧАСТЬ 5: Фолы, штрафные, полировка
+// ============================================================
+
+// Добавляем счётчики фолов в фигуры при инициализации
+const _v5_initGame = initGame;
+initGame = function(teamA, teamB){
+  _v5_initGame(teamA, teamB);
+  fig.forEach(function(f){ f.fouls = 0; });
+};
+
+// Патчим resetPositions — сбрасываем фолы НЕ при сбросе, только при новой игре
+// Фолы копятся всю игру.
+
+// ----- ФОЛЫ В ТОЛЧКЕ -----
+const _v5_execAb = execAb;
+execAb = function(t){
+  const f = byId(sel);
+  if(!f || !pab) return;
+
+  if(t.m === 'enemy' && pab.m === 'push'){
+    const e = byId(t.id);
+    const a = toAx(f.c, f.r), b = toAx(e.c, e.r);
+    const dq = Math.sign(b.q - a.q) || (Math.random() < 0.5 ? 1 : -1);
+    const dr = Math.sign(b.r - a.r) || (Math.random() < 0.5 ? 1 : -1);
+    const tp = toOff(b.q + dq, b.r + dr);
+
+    const r1 = f.s + Math.floor(Math.random()*6) + 1;
+    const r2 = e.s + Math.floor(Math.random()*6) + 1;
+    const diff = r1 - r2;
+
+    logMsg('Толчок ' + r1 + ' vs ' + r2);
+
+    // Фол если разница слишком большая (агрессивный толчок)
+    if(diff >= 5){
+      f.fouls = (f.fouls || 0) + 1;
+      logMsg('⚠ ФОЛ! ' + f.n + ' (фолов: ' + f.fouls + '/5)');
+      popText('ФОЛ', cen(f.c, f.r).x, cen(f.c, f.r).y - 25, '#ef4444', 20);
+      if(f.fouls >= 5){
+        logMsg('❌ ' + f.n + ' удалён!');
+        f.o = 0; f.a = true;
+        // Убираем с поля
+        f.c = -1; f.r = -1;
+      }
+    }
+
+    if(tp.c < 0 || tp.c >= C || tp.r < 0 || tp.r >= R || figAt(tp.c, tp.r)){
+      logMsg('Нет места для толчка');
+    } else {
+      if(r1 > r2){
+        e.c = tp.c; e.r = tp.r; e.px = undefined; e.py = undefined;
+        logMsg('✓ Отброшен');
+        popText('ТОЛЧОК', cen(e.c, e.r).x, cen(e.c, e.r).y - 25, '#f59e0b', 16);
+      } else {
+        logMsg('✗ Не вышло');
+      }
+    }
+    f.o -= pab.c;
+    pab = null; mode = 'sel'; hl = [];
+    if(f.o <= 0) end(); else { reHL(); ui(); draw(); }
+    return;
+  }
+
+  if(t.m === 'enemy' && pab.m === 'freeze'){
+    const e = byId(t.id);
+    // Фол при захвате — 30% шанс
+    if(Math.random() < 0.3){
+      f.fouls = (f.fouls || 0) + 1;
+      logMsg('⚠ ФОЛ! ' + f.n + ' (фолов: ' + f.fouls + '/5)');
+      popText('ФОЛ', cen(f.c, f.r).x, cen(f.c, f.r).y - 25, '#ef4444', 20);
+      if(f.fouls >= 5){
+        logMsg('❌ ' + f.n + ' удалён!');
+        f.o = 0; f.a = true;
+        f.c = -1; f.r = -1;
+      }
+      // Захват не срабатывает при фоле
+      f.o -= pab.c;
+      pab = null; mode = 'sel'; hl = [];
+      if(f.o <= 0) end(); else { reHL(); ui(); draw(); }
+      return;
+    }
+  }
+
+  if(t.m === 'enemy' && pab.m === 'sting'){
+    const e = byId(t.id);
+    // Жало — 25% шанс фола
+    if(Math.random() < 0.25){
+      f.fouls = (f.fouls || 0) + 1;
+      logMsg('⚠ ФОЛ! ' + f.n + ' (фолов: ' + f.fouls + '/5)');
+      popText('ФОЛ', cen(f.c, f.r).x, cen(f.c, f.r).y - 25, '#ef4444', 20);
+      if(f.fouls >= 5){
+        logMsg('❌ ' + f.n + ' удалён!');
+        f.o = 0; f.a = true;
+        f.c = -1; f.r = -1;
+      }
+      f.o -= pab.c;
+      pab = null; mode = 'sel'; hl = [];
+      if(f.o <= 0) end(); else { reHL(); ui(); draw(); }
+      return;
+    }
+  }
+
+  _v5_execAb(t);
+};
+
+// ----- ФОЛ В ОТБОРЕ -----
+const _v5_doSteal = doSteal;
+doSteal = function(){
+  const f = byId(sel);
+  const bh = byId(ball);
+  if(!f || !bh || f.o < 1) return;
+  if(dist(f.c, f.r, bh.c, bh.r) !== 1) return;
+  f.o -= 1;
+  const atk = f.z + Math.floor(Math.random()*6) + 1;
+  const def = bh.d + Math.floor(Math.random()*6) + 1 + (holds[bh.i] ? 2 : 0);
+  logMsg('Отбор ' + f.n + ' ' + atk + ' vs ' + bh.n + ' ' + def);
+
+  // Фол при грубом провале (разница -4 и хуже)
+  if(atk <= def - 4){
+    f.fouls = (f.fouls || 0) + 1;
+    logMsg('⚠ ФОЛ! ' + f.n + ' (фолов: ' + f.fouls + '/5)');
+    popText('ФОЛ', cen(f.c, f.r).x, cen(f.c, f.r).y - 25, '#ef4444', 20);
+    if(f.fouls >= 5){
+      logMsg('❌ ' + f.n + ' удалён!');
+      f.o = 0; f.a = true;
+      f.c = -1; f.r = -1;
+    }
+    // Штрафные сопернику
+    shootFreeThrows(bh.t, 1);
+    return;
+  }
+
+  if(atk >= def){
+    ball = f.i;
+    delete holds[bh.i];
+    logMsg('✓ Мяч у ' + f.n);
+    popText('ОТБОР!', cen(f.c, f.r).x, cen(f.c, f.r).y - 25, '#22c55e', 18);
+  } else {
+    logMsg('✗ Не удалось');
+    popText('Мимо', cen(f.c, f.r).x, cen(f.c, f.r).y - 25, '#ef4444', 16);
+  }
+  if(f.o <= 0) end(); else { reHL(); ui(); draw(); }
+};
+
+// ----- ФОЛ В БРОСКЕ (постер-фол) -----
+const _v5_doDunk = doDunk;
+doDunk = function(){
+  const f = byId(sel);
+  if(!f || ball !== f.i || f.o < 2) return;
+  const hoop = hoops[1 - f.t];
+  if(dist(f.c, f.r, hoop.c, hoop.r) > 1) return;
+
+  // Проверка: защитник рядом может сфолить
+  const defender = fig.find(function(g){
+    return g.t !== f.t && dist(g.c, g.r, f.c, f.r) === 1;
+  });
+
+  if(defender && Math.random() < 0.25){
+    defender.fouls = (defender.fouls || 0) + 1;
+    logMsg('⚠ ФОЛ на данке! ' + defender.n + ' (фолов: ' + defender.fouls + '/5)');
+    popText('ФОЛ', cen(f.c, f.r).x, cen(f.c, f.r).y - 30, '#ef4444', 22);
+    if(defender.fouls >= 5){
+      logMsg('❌ ' + defender.n + ' удалён!');
+      defender.o = 0; defender.a = true;
+      defender.c = -1; defender.r = -1;
+    }
+    // Данк + 1 штрафной
+    const sc_ = cen(f.c, f.r);
+    const hp = cen(hoop.c, hoop.r);
+    f.o -= 2;
+    ball = null;
+    flyBall(sc_.x, sc_.y, hp.x, hp.y, function(){
+      popText('+2!', hp.x, hp.y - 22, '#22c55e', 28);
+      sc[f.t] += 2;
+      logMsg('ДАНК + ФОЛ! +2 и штрафной');
+      setTimeout(function(){
+        shootFreeThrows(f.t, 1);
+        if(sc[f.t] >= 21){ over = true; logMsg('Победа!'); sel = null; hl = []; ui(); draw(); return; }
+        resetPositions(f.t);
+      }, 600);
+    });
+    return;
+  }
+
+  _v5_doDunk();
+};
+
+// ----- ШТРАФНЫЕ -----
+function shootFreeThrows(team, count){
+  const hoop = hoops[1 - team];
+  const shooter = fig.find(function(f){
+    return f.t === team && f.c >= 0 && f.b >= 4;
+  }) || fig.find(function(f){ return f.t === team && f.c >= 0; });
+
+  if(!shooter){ logMsg('Некому бросать штрафные'); return; }
+
+  logMsg('🎯 Штрафные: ' + shooter.n + ' x' + count);
+
+  let made = 0, attempted = 0;
+
+  function nextThrow(){
+    if(attempted >= count){
+      logMsg('Штрафные: ' + made + '/' + count);
+      if(sc[team] >= 21){ over = true; logMsg('Победа!'); }
+      return;
+    }
+    attempted++;
+    const roll = Math.floor(Math.random()*6) + 1;
+    const tot = shooter.b + roll;
+    const needed = 6;
+    logMsg('Штрафной ' + attempted + ': ' + shooter.b + '+' + roll + '=' + tot + ' vs ' + needed);
+    if(tot >= needed){
+      sc[team] += 1;
+      made++;
+      logMsg('✓ +1');
+      popText('+1', cen(hoop.c, hoop.r).x, cen(hoop.c, hoop.r).y - 22, '#22c55e', 22);
+    } else {
+      logMsg('✗ Промах');
+      popText('Мимо', cen(hoop.c, hoop.r).x, cen(hoop.c, hoop.r).y - 22, '#ef4444', 18);
+    }
+    setTimeout(nextThrow, 600);
+  }
+
+  setTimeout(nextThrow, 400);
+}
+
+// ----- ПОЛИРОВКА UI: сложность броска + список фолов -----
+const _v5_ui = ui;
+ui = function(){
+  _v5_ui();
+  if(over) return;
+
+  const info = document.getElementById('figInfo');
+  if(!info || info.style.display === 'none') return;
+  if(sel === null) return;
+  const f = byId(sel);
+  if(!f) return;
+
+  // Показать сложность броска
+  if(ball === f.i){
+    const hoop = hoops[1 - f.t];
+    const d = dist(f.c, f.r, hoop.c, hoop.r);
+    let tgt, sn;
+    if(d <= 1){ tgt = 6; sn = 'Лэй'; }
+    else if(d <= 3){ tgt = 8; sn = 'Мид'; }
+    else { tgt = 10; sn = 'Трёха'; }
+    let pen = 0;
+    fig.forEach(function(o){
+      if(o.t !== f.t && dist(o.c, o.r, f.c, f.r) <= 1) pen = 2;
+    });
+    const needed = tgt + pen;
+    info.innerHTML += '<br><span style="color:#86efac">Бросок: ' + sn +
+      ' (дист. ' + d + ') нужно ' + needed + '+</span>';
+  }
+
+  // Показать фолы
+  if(f.fouls && f.fouls > 0){
+    info.innerHTML += '<br><span style="color:#f87171">Фолы: ' + f.fouls + '/5</span>';
+  }
+};
+
+// Показать фолы на канвасе (маленькие точки под фигурой)
+const _v5_render = render;
+render = function(){
+  _v5_render();
+  fig.forEach(function(f){
+    if(!f.fouls || f.fouls === 0) return;
+    if(f.c < 0) return;
+    const p = cen(f.c, f.r);
+    for(let i = 0; i < f.fouls; i++){
+      x.beginPath();
+      x.arc(p.x - 8 + i * 4, p.y + S*0.75, 2, 0, 6.3);
+      x.fillStyle = '#ef4444';
+      x.fill();
+    }
+  });
+  // Удалённые фигуры не рисуем
+  // (у нас они уже с c=-1, поэтому cen() не вызывается)
+};
+
+// Убираем плавающую кнопку Отбор из HTML (она не нужна, если есть в панели)
+const sf = document.getElementById('stealFloatBtn');
+if(sf) sf.style.display = 'none';
+
+logMsg('Патч v5 загружен: фолы, штрафные, полировка');
+// ============================================================
+// ЧАСТЬ 6: Новые броски — Флоатер, Алей-уп, Дальний трёх
+// ============================================================
+
+// --- ФЛОАТЕР: короткий бросок с отклонением ---
+// d 1-2, 2 ОД, -1 к броску, цель 7, нельзя заблокировать
+function doFloater(){
+  const f = byId(sel);
+  if(!f || ball !== f.i || f.o < 2) return;
+  const hoop = hoops[1 - f.t];
+  const d = dist(f.c, f.r, hoop.c, hoop.r);
+  if(d < 1 || d > 2) return;
+  const sc_ = cen(f.c, f.r);
+  const hp = cen(hoop.c, hoop.r);
+  f.o -= 2;
+
+  let bonus = 0;
+  if(f.ab.some(function(a){ return a.n === 'Снайпер'; }) && !f.mv){ bonus += 2; }
+  if(f.bl > 0){ bonus -= 2; }
+
+  const roll = Math.floor(Math.random()*6) + 1;
+  const tot = f.b + bonus + roll - 1;
+  const needed = 7;
+  logMsg('Флоатер ' + f.b + '+' + bonus + '-' + 1 + '+' + roll + '=' + tot + ' vs ' + needed);
+
+  ball = null;
+  flyBall(sc_.x, sc_.y, hp.x, hp.y, function(){
+    if(tot >= needed){
+      popText('+2!', hp.x, hp.y - 22, '#22c55e', 26);
+      sc[f.t] += 2;
+      logMsg('Флоатер забит! +2');
+      setTimeout(function(){
+        if(sc[f.t] >= 21){ over = true; logMsg('Победа!'); sel=null; hl=[]; ui(); draw(); return; }
+        resetPositions(f.t);
+      }, 500);
+    } else {
+      popText('Мимо', hp.x, hp.y - 22, '#ef4444', 22);
+      logMsg('Флоатер промах');
+      setTimeout(function(){ rebound(f.t); end(); }, 400);
+    }
+  });
+}
+
+// --- ДАЛЬНИЙ ТРЁХ: 5+ гексов, 3 ОД, -3 к броску ---
+function doDeepThree(){
+  const f = byId(sel);
+  if(!f || ball !== f.i || f.o < 3) return;
+  const hoop = hoops[1 - f.t];
+  const d = dist(f.c, f.r, hoop.c, hoop.r);
+  if(d < 5) return;
+  const sc_ = cen(f.c, f.r);
+  const hp = cen(hoop.c, hoop.r);
+  f.o -= 3;
+
+  let bonus = 0;
+  if(f.ab.some(function(a){ return a.n === 'Дальнобой'; }) && d >= 4){ bonus += 1; logMsg('Дальнобой +1'); }
+  if(f.ab.some(function(a){ return a.n === 'Снайпер'; }) && !f.mv){ bonus += 2; logMsg('Снайпер +2'); }
+  if(f.bl > 0){ bonus -= 2; }
+
+  const roll = Math.floor(Math.random()*6) + 1;
+  const tot = f.b + bonus + roll - 3;
+  const needed = 9;
+  logMsg('Дальний трёх ' + f.b + '+' + bonus + '-' + 3 + '+' + roll + '=' + tot + ' vs ' + needed);
+
+  // Блок проверяется
+  const blocker = checkBlock(f);
+  if(blocker){
+    popText('БЛОК!', sc_.x, sc_.y - 30, '#ef4444', 22);
+    logMsg('Дальний трёх заблокирован ' + blocker.n);
+    delete holds[f.i];
+    ball = blocker.i;
+    setTimeout(function(){ end(); }, 400);
+    return;
+  }
+
+  ball = null;
+  flyBall(sc_.x, sc_.y, hp.x, hp.y, function(){
+    if(tot >= needed){
+      popText('+3!', hp.x, hp.y - 22, '#22c55e', 28);
+      sc[f.t] += 3;
+      logMsg('Дальний трёх! +3');
+      setTimeout(function(){
+        if(sc[f.t] >= 21){ over = true; logMsg('Победа!'); sel=null; hl=[]; ui(); draw(); return; }
+        resetPositions(f.t);
+      }, 500);
+    } else {
+      popText('Мимо', hp.x, hp.y - 22, '#ef4444', 22);
+      logMsg('Дальний трёх промах');
+      setTimeout(function(){ rebound(f.t); end(); }, 400);
+    }
+  });
+}
+
+// --- АЛЕЙ-УП: пас на партнёра у кольца + бросок в воздухе ---
+function doAlley(){
+  const f = byId(sel);
+  if(!f || ball !== f.i || f.o < 2) return;
+  const hoop = hoops[1 - f.t];
+  // Ищем союзника у кольца (в 1 гексе)
+  const target = fig.find(function(g){
+    return g.t === f.t && g.i !== f.i && dist(g.c, g.r, hoop.c, hoop.r) <= 1;
+  });
+  if(!target){ logMsg('Нет союзника у кольца'); return; }
+
+  const sc_ = cen(f.c, f.r);
+  const tp = cen(target.c, target.r);
+  const hp = cen(hoop.c, hoop.r);
+  f.o -= 2;
+
+  // Перехват паса (только дальний — сложнее)
+  let best = null, bestRoll = 0;
+  fig.forEach(function(g){
+    if(g.t === f.t) return;
+    const minD = Math.min(dist(g.c, g.r, f.c, f.r), dist(g.c, g.r, target.c, target.r));
+    if(minD > 2) return;
+    const roll = g.z + Math.floor(Math.random()*6) + 1;
+    if(roll > bestRoll){ bestRoll = roll; best = g; }
+  });
+
+  if(best){
+    const passRoll = f.d + Math.floor(Math.random()*6) + 1;
+    logMsg('Алей-пас: перехват ' + best.n + ' ' + bestRoll + ' vs ' + passRoll);
+    if(bestRoll >= passRoll){
+      ball = best.i;
+      logMsg('ПЕРЕХВАТ алей-паса! ' + best.n);
+      delete holds[f.i];
+      setTimeout(function(){ end(); }, 400);
+      return;
+    }
+  }
+
+  logMsg('Алей-уп! ' + f.n + ' → ' + target.n);
+
+  // Анимация: мяч летит к кольцу
+  ball = null;
+  flyBall(sc_.x, sc_.y, hp.x, hp.y, function(){
+    // Бросок цели
+    let pen = 0;
+    fig.forEach(function(o){
+      if(o.t !== target.t && dist(o.c, o.r, target.c, target.r) <= 1) pen = 2;
+    });
+    let bonus = 2; // Алей-уп всегда +2 (легко забить сверху)
+    if(target.bl > 0) bonus -= 2;
+    const roll = Math.floor(Math.random()*6) + 1;
+    const tot = target.b + bonus + roll + 3; // +3 за то что бросок сверху
+    const needed = 5 + pen;
+    logMsg('Алей-финиш ' + target.n + ' ' + tot + ' vs ' + needed);
+    if(tot >= needed){
+      popText('АЛЕЙ-УП +2!', hp.x, hp.y - 25, '#22c55e', 24);
+      sc[f.t] += 2;
+      logMsg('✓ Алей-уп! +2');
+      setTimeout(function(){
+        if(sc[f.t] >= 21){ over = true; logMsg('Победа!'); sel=null; hl=[]; ui(); draw(); return; }
+        resetPositions(f.t);
+      }, 600);
+    } else {
+      popText('Мимо', hp.x, hp.y - 22, '#ef4444', 20);
+      logMsg('Алей-уп промах');
+      setTimeout(function(){ rebound(f.t); end(); }, 400);
+    }
+  });
+}
+
+// --- Патч UI: добавляем кнопки ---
+const _v6_ui = ui;
+ui = function(){
+  _v6_ui();
+  if(over || sel === null) return;
+  const f = byId(sel);
+  if(!f || f.t !== turn || f.a) return;
+  if(mode !== 'sel') return;
+  if(ball !== f.i) return;
+
+  const hoop = hoops[1 - f.t];
+  const d = dist(f.c, f.r, hoop.c, hoop.r);
+  const act = document.getElementById('act');
+  const endBtn = act.querySelector('.end');
+
+  // Флоатер — 1-2 гекса, 2 ОД
+  if(d >= 1 && d <= 2 && f.o >= 2){
+    const b = document.createElement('button');
+    b.textContent = 'Флоатер';
+    b.onclick = doFloater;
+    if(endBtn) act.insertBefore(b, endBtn); else act.appendChild(b);
+  }
+
+  // Дальний трёх — 5+ гексов, 3 ОД
+  if(d >= 5 && f.o >= 3){
+    const b = document.createElement('button');
+    b.textContent = 'Дальний трёх(3)';
+    b.onclick = doDeepThree;
+    if(endBtn) act.insertBefore(b, endBtn); else act.appendChild(b);
+  }
+
+  // Алей-уп — если союзник у чужого кольца, 2 ОД
+  const allyAtHoop = fig.find(function(g){
+    return g.t === f.t && g.i !== f.i && dist(g.c, g.r, hoop.c, hoop.r) <= 1;
+  });
+  if(allyAtHoop && f.o >= 2){
+    const b = document.createElement('button');
+    b.textContent = 'Алей-уп(2)';
+    b.style.background = '#8b5cf6';
+    b.onclick = doAlley;
+    if(endBtn) act.insertBefore(b, endBtn); else act.appendChild(b);
+  }
+};
+
+logMsg('Патч v6 загружен: флоатер, дальний трёх, алей-уп');
+// ============================================================
+// ЧАСТЬ 7a: Иконки фигур + визуальные улучшения
+// ============================================================
+
+// Маппинг фигур на эмодзи
+const ICONS = {
+  'Королева ос': '👑',
+  'Комар': '🦟',
+  'Муравей': '🐜',
+  'Муха': '🪰',
+  'Таракан': '🪳',
+  'Клещ': '🕷',
+  'Оса': '🐝',
+  'Изум.оса': '🐝',
+  'Светлячок': '✨',
+  'Бабочка': '🦋',
+  'Мотылёк': '🦋',
+  'Б.коровка': '🐞',
+  'Богомол': '🦗',
+  'Кузнечик': '🦗',
+  'Стрекоза': '🪰',
+  'Палочник': '🌿',
+  'Паук': '🕸',
+  'Б.кор.тиран': '👑',
+  'Жук': '🪲',
+  'Скарабей': '🪲',
+  'Паук сер.': '💧',
+  'Щитоносец': '🛡',
+  'Огн.муравей': '🔥',
+  'Королева пчёл': '👑',
+  'Скорпион': '🦂',
+  'Червь': '🪱',
+  'Мокрица': '🪲'
+};
+
+// Полный перехват render (заменяем отрисовку фигур)
+const _v7a_render = render;
+render = function(){
+  // Сначала рисуем поле как раньше (через _v7a_render? Нет — он рисует всё подряд)
+  // Используем ту же схему: сначала поле и подсветку, потом фигуры сами
+  
+  // Вызовем старый render, но потом перерисуем фигуры красивее поверх
+  _v7a_render();
+  
+  // Теперь поверх рисуем красивые фигуры — закрываем старые кружки
+  fig.forEach(function(f){
+    if(f.c < 0) return;
+    const base = cen(f.c, f.r);
+    const px = (f.px !== undefined) ? f.px : base.x;
+    const py = (f.py !== undefined) ? f.py : base.y;
+    
+    // Тень
+    x.beginPath();
+    x.ellipse(px + 1, py + S*0.55, S*0.55, S*0.22, 0, 0, 6.3);
+    x.fillStyle = 'rgba(0,0,0,0.4)';
+    x.fill();
+    
+    // Основной круг (закрываем старую отрисовку)
+    x.beginPath();
+    x.arc(px, py, S*0.62, 0, 6.3);
+    let col = f.t ? '#dc2626' : '#16a34a';
+    if(f.a) col = f.t ? '#7f1d1d' : '#14532d';
+    if(f.fr > 0) col = '#0ea5e9';
+    if(f.bl > 0) col = '#a78bfa';
+    // Градиент
+    const grad = x.createRadialGradient(px - 3, py - 3, 2, px, py, S*0.62);
+    grad.addColorStop(0, f.t ? '#f87171' : '#4ade80');
+    grad.addColorStop(1, col);
+    x.fillStyle = grad;
+    x.fill();
+    
+    // Обводка
+    x.strokeStyle = '#0a0a1a';
+    x.lineWidth = 2.5;
+    x.stroke();
+    
+    // Иконка насекомого
+    const icon = ICONS[f.n] || '●';
+    x.font = 'bold ' + Math.round(S*1.1) + 'px "Apple Color Emoji", "Segoe UI Emoji", sans-serif';
+    x.textAlign = 'center';
+    x.textBaseline = 'middle';
+    x.fillText(icon, px, py + 1);
+    
+    // Полоска ОД сверху
+    if(f.t === turn && !f.a && f.o > 0){
+      const w = S * 1.0;
+      const h = 3;
+      const bx = px - w/2;
+      const by = py - S*0.85;
+      // фон
+      x.fillStyle = 'rgba(0,0,0,0.6)';
+      x.fillRect(bx, by, w, h);
+      // заполнение
+      const ratio = f.o / f.mo;
+      x.fillStyle = f.o >= 2 ? '#22c55e' : f.o === 1 ? '#f59e0b' : '#ef4444';
+      x.fillRect(bx, by, w * ratio, h);
+    }
+    
+    // Буква позиции снизу
+    x.fillStyle = 'rgba(0,0,0,0.8)';
+    x.beginPath();
+    x.arc(px + S*0.5, py + S*0.5, 7, 0, 6.3);
+    x.fill();
+    x.fillStyle = '#fff';
+    x.font = 'bold 8px sans-serif';
+    x.fillText(f.p, px + S*0.5, py + S*0.5);
+    
+    // Мяч — ярче
+    if(ball === f.i){
+      x.beginPath();
+      x.arc(px + S*0.6, py - S*0.65, 7, 0, 6.3);
+      x.fillStyle = '#f97316';
+      x.fill();
+      x.strokeStyle = '#fff';
+      x.lineWidth = 2;
+      x.stroke();
+      x.beginPath();
+      x.arc(px + S*0.6 - 2, py - S*0.65 - 2, 2, 0, 6.3);
+      x.fillStyle = '#fed7aa';
+      x.fill();
+    }
+    
+    // Держание мяча — звёздочка
+    if(holds[f.i]){
+      x.fillStyle = '#fbbf24';
+      x.font = 'bold 14px sans-serif';
+      x.fillText('★', px - S*0.7, py - S*0.6);
+    }
+    
+    // Обездвижен / ослеплён
+    if(f.fr > 0){
+      x.fillStyle = '#fff';
+      x.font = 'bold 11px sans-serif';
+      x.fillText('❄', px - S*0.65, py + S*0.55);
+    }
+    if(f.bl > 0){
+      x.fillStyle = '#fff';
+      x.font = 'bold 11px sans-serif';
+      x.fillText('✦', px - S*0.65, py + S*0.55);
+    }
+    
+    // Выделенная фигура — пульсирующая обводка
+    if(sel === f.i){
+      const pulse = 0.5 + 0.5 * Math.sin(Date.now() / 200);
+      x.beginPath();
+      x.arc(px, py, S*0.75, 0, 6.3);
+      x.strokeStyle = 'rgba(251,191,36,' + (0.4 + 0.6*pulse) + ')';
+      x.lineWidth = 3;
+      x.stroke();
+      // Вращающиеся «шестерёнки»
+      for(let i = 0; i < 4; i++){
+        const a = Date.now() / 500 + i * Math.PI/2;
+        x.beginPath();
+        x.arc(px + Math.cos(a)*S*0.85, py + Math.sin(a)*S*0.85, 2, 0, 6.3);
+        x.fillStyle = '#fbbf24';
+        x.fill();
+      }
+      // Постоянная анимация
+      if(!animating){ animating = true; requestAnimationFrame(tick); }
+    }
+  });
+};
+
+// Ускоряем tick чтобы анимация выделения была плавной
+const _v7a_tick = tick;
+tick = function(){
+  _v7a_tick();
+  // Если есть выделенная фигура — продолжаем анимацию
+  if(sel !== null && !animating){
+    animating = true;
+    requestAnimationFrame(tick);
+  }
+};
+
+logMsg('Патч v7a: иконки фигур + анимация выделения');
+// ============================================================
+// ЧАСТЬ 7b: Разметка поля + красивые кольца
+// ============================================================
+
+const _v7b_render = render;
+render = function(){
+  _v7b_render();
+
+  // ---- Разметка поверх поля (полупрозрачная) ----
+  hoops.forEach(function(h, idx){
+    const hp = cen(h.c, h.r);
+    // Кольцо вверху (idx=0) — краска вниз, вверху (idx=1) — вверх
+    const down = idx === 0;
+
+    // Краска (штрафная зона) — 2 гекса
+    const paintR = 2.3 * W;
+    x.beginPath();
+    if(down){
+      x.arc(hp.x, hp.y, paintR, 0, Math.PI);
+    } else {
+      x.arc(hp.x, hp.y, paintR, Math.PI, Math.PI*2);
+    }
+    x.fillStyle = idx === 0 ? 'rgba(245,158,11,0.10)' : 'rgba(245,158,11,0.10)';
+    x.fill();
+    x.strokeStyle = idx === 0 ? 'rgba(248,113,113,0.6)' : 'rgba(74,222,128,0.6)';
+    x.lineWidth = 2;
+    x.stroke();
+
+    // Трёхочковая дуга — 4 гекса
+    const threeR = 4.2 * W;
+    x.beginPath();
+    if(down){
+      x.arc(hp.x, hp.y, threeR, Math.PI * 0.15, Math.PI * 0.85);
+    } else {
+      x.arc(hp.x, hp.y, threeR, Math.PI * 1.15, Math.PI * 1.85);
+    }
+    x.strokeStyle = 'rgba(255,255,255,0.35)';
+    x.lineWidth = 2.5;
+    x.setLineDash([6, 6]);
+    x.stroke();
+    x.setLineDash([]);
+
+    // Надпись "3PT"
+    const labelX = hp.x + threeR * 0.75;
+    const labelY = hp.y + (down ? -10 : 10);
+    x.font = 'bold 10px sans-serif';
+    x.textAlign = 'center';
+    x.textBaseline = 'middle';
+    x.fillStyle = 'rgba(255,255,255,0.4)';
+    x.fillText('3PT', labelX, labelY);
+
+    // ---- Красивое кольцо ----
+    // Щит (backboard)
+    const bw = S * 1.6, bh = 4;
+    const by = down ? hp.y - S * 0.85 : hp.y + S * 0.85 - bh;
+    x.fillStyle = 'rgba(240,240,255,0.85)';
+    x.fillRect(hp.x - bw/2, by, bw, bh);
+    x.strokeStyle = 'rgba(0,0,0,0.5)';
+    x.lineWidth = 1;
+    x.strokeRect(hp.x - bw/2, by, bw, bh);
+
+    // Тень под кольцом
+    x.beginPath();
+    x.arc(hp.x, hp.y + 2, 8, 0, 6.3);
+    x.fillStyle = 'rgba(0,0,0,0.4)';
+    x.fill();
+
+    // Сетка (паутинка)
+    const netR = 8;
+    for(let i = 0; i < 6; i++){
+      const a1 = (i / 6) * Math.PI * 2;
+      const a2 = ((i+1) / 6) * Math.PI * 2;
+      x.beginPath();
+      x.moveTo(hp.x + Math.cos(a1) * netR, hp.y + Math.sin(a1) * netR);
+      x.lineTo(hp.x, hp.y + netR * 1.6);
+      x.lineTo(hp.x + Math.cos(a2) * netR, hp.y + Math.sin(a2) * netR);
+      x.strokeStyle = 'rgba(255,255,255,0.3)';
+      x.lineWidth = 1;
+      x.stroke();
+    }
+
+    // Кольцо
+    x.beginPath();
+    x.arc(hp.x, hp.y, netR, 0, 6.3);
+    x.strokeStyle = idx === 0 ? '#f87171' : '#4ade80';
+    x.lineWidth = 3;
+    x.stroke();
+    x.beginPath();
+    x.arc(hp.x, hp.y, netR - 2, 0, 6.3);
+    x.strokeStyle = 'rgba(255,255,255,0.5)';
+    x.lineWidth = 1;
+    x.stroke();
+
+    // Мяч внутри кольца (индикатор)
+    x.beginPath();
+    x.arc(hp.x, hp.y, 3, 0, 6.3);
+    x.fillStyle = idx === 0 ? '#dc2626' : '#16a34a';
+    x.fill();
+  });
+
+  // ---- Центральный круг ----
+  const centerR = W * 1.2;
+  const cc = cen(4, 5.5);
+  x.beginPath();
+  x.arc(cc.x, cc.y + S, centerR, 0, 6.3);
+  x.strokeStyle = 'rgba(255,255,255,0.2)';
+  x.lineWidth = 2;
+  x.setLineDash([4, 6]);
+  x.stroke();
+  x.setLineDash([]);
+  x.font = 'bold 11px sans-serif';
+  x.fillStyle = 'rgba(255,255,255,0.15)';
+  x.textAlign = 'center';
+  x.fillText('CENTER', cc.x, cc.y + S);
+};
+
+logMsg('Патч v7b: разметка поля и красивые кольца');
+// ============================================================
+// ЧАСТЬ 8: Дриблинг-приёмы (отдельное меню)
+// ============================================================
+
+// Список приёмов
+const DRIBBLES = [
+  {n:'Кроссовер', m:'cross', c:1, needDef:1,
+   d:'Проверка Дри vs Защ. Успех: +2 к броску'},
+  {n:'Спин-мув', m:'spin', c:2, needDef:1,
+   d:'Проверка Дри vs Защ. Успех: защитник -1 ОД, но -1 к броску'},
+  {n:'Хезитейшн', m:'hesi', c:1, needDef:1,
+   d:'Проверка Дри vs Защ. Успех: защитник теряет 1 ОД'},
+  {n:'Между ног', m:'between', c:1, needDef:0,
+   d:'+2 к следующему броску (без проверки)'},
+  {n:'Анкл-брейкер', m:'ankle', c:3, needDef:1,
+   d:'Проверка Дри-3 vs Защ. Успех: защитник пропускает ход'},
+  {n:'Степ-бэк', m:'stepback', c:2, needDef:0,
+   d:'Отойти на 1 гекс назад, +3 к броску'},
+  {n:'Евростеп', m:'euro', c:2, needDef:1,
+   d:'Проверка Дри vs Защ. Успех: +2 к броску, защитник -1 ОД'}
+];
+
+let dribbleMode = false;
+
+function openDribbleMenu(){
+  const f = byId(sel);
+  if(!f || ball !== f.i || f.o < 1) return;
+  mode = 'dribbleMenu';
+  ui(); draw();
+}
+
+function chooseDribble(dr){
+  const f = byId(sel);
+  if(!f || ball !== f.i) return;
+  if(f.o < dr.c){ logMsg('Мало ОД'); return; }
+
+  // Проверка на защитника рядом (если нужно)
+  if(dr.needDef){
+    const defs = fig.filter(function(g){
+      return g.t !== f.t && g.c >= 0 && dist(g.c, g.r, f.c, f.r) === 1;
+    });
+    if(!defs.length){ logMsg('Нет защитника рядом'); return; }
+    runDribble(dr, defs[0]);
+  } else {
+    runDribble(dr, null);
+  }
+}
+
+function runDribble(dr, def){
+  const f = byId(sel);
+  f.o -= dr.c;
+
+  if(dr.m === 'between'){
+    f.shootBonus = (f.shootBonus || 0) + 2;
+    logMsg('Между ног: +2 к броску');
+    popText('+2', cen(f.c, f.r).x, cen(f.c, f.r).y - 25, '#22c55e', 16);
+    endDribble();
+    return;
+  }
+
+  if(dr.m === 'stepback'){
+    // Найти гекс "назад" — в сторону своей половины
+    const back = f.t === 0 ? {dc:0, dr:1} : {dc:0, dr:-1};
+    const tc = f.c + back.dc, tr = f.r + back.dr;
+    if(tc < 0 || tc >= C || tr < 0 || tr >= R || figAt(tc, tr)){
+      logMsg('Негде отойти'); endDribble(); return;
+    }
+    f.c = tc; f.r = tr; f.px = undefined; f.py = undefined;
+    f.shootBonus = (f.shootBonus || 0) + 3;
+    logMsg('Степ-бэк: +3 к броску');
+    popText('STEP BACK', cen(f.c, f.r).x, cen(f.c, f.r).y - 25, '#fbbf24', 14);
+    endDribble();
+    return;
+  }
+
+  // Проверки Дри vs Защ
+  const roll = Math.floor(Math.random()*6) + 1;
+  const defRoll = Math.floor(Math.random()*6) + 1;
+  let atkBonus = 0;
+  if(f.bl > 0) atkBonus -= 2;
+  const pen = dr.m === 'ankle' ? -3 : 0;
+  const atk = f.d + atkBonus + pen + roll;
+  const def_ = def.z + defRoll;
+  logMsg(dr.n + ': Дри ' + atk + ' vs Защ ' + def_);
+
+  const win = atk >= def_;
+
+  if(dr.m === 'cross'){
+    if(win){
+      f.shootBonus = (f.shootBonus || 0) + 2;
+      logMsg('✓ Кроссовер! +2 к броску');
+      popText('CROSS!', cen(f.c, f.r).x, cen(f.c, f.r).y - 25, '#22c55e', 14);
+    } else {
+      logMsg('✗ Кроссовер не удался');
+      f.o -= 1;
+    }
+  } else if(dr.m === 'spin'){
+    if(win){
+      def.o = Math.max(0, def.o - 1);
+      f.shootBonus = (f.shootBonus || 0) - 1;
+      logMsg('✓ Спин-мув! Защитник -1 ОД, -1 к броску');
+      popText('SPIN', cen(f.c, f.r).x, cen(f.c, f.r).y - 25, '#a855f7', 14);
+    } else {
+      logMsg('✗ Спин-мув не удался');
+    }
+  } else if(dr.m === 'hesi'){
+    if(win){
+      def.o = Math.max(0, def.o - 1);
+      logMsg('✓ Хезитейшн! Защитник -1 ОД');
+      popText('HESI', cen(f.c, f.r).x, cen(f.c, f.r).y - 25, '#3b82f6', 14);
+    } else {
+      logMsg('✗ Хезитейшн не удался');
+    }
+  } else if(dr.m === 'ankle'){
+    if(win){
+      def.fr = 1;
+      logMsg('★ АНКЛ-БРЕЙКЕР! ' + def.n + ' падает!');
+      popText('ANKLE!', cen(def.c, def.r).x, cen(def.c, def.r).y - 30, '#ef4444', 18);
+    } else {
+      logMsg('✗ Анкл-брейкер провалился');
+      f.o -= 1;
+    }
+  } else if(dr.m === 'euro'){
+    if(win){
+      def.o = Math.max(0, def.o - 1);
+      f.shootBonus = (f.shootBonus || 0) + 2;
+      logMsg('✓ Евростеп! +2 к броску, защитник -1 ОД');
+      popText('EURO', cen(f.c, f.r).x, cen(f.c, f.r).y - 25, '#f59e0b', 14);
+    } else {
+      logMsg('✗ Евростеп провалился');
+    }
+  }
+
+  endDribble();
+}
+
+function endDribble(){
+  const f = byId(sel);
+  mode = 'sel';
+  hl = [];
+  if(!f){ ui(); draw(); return; }
+  if(f.o <= 0) end();
+  else { reHL(); ui(); draw(); }
+}
+
+// --- UI: меню дриблинга ---
+const _v8_ui = ui;
+ui = function(){
+  _v8_ui();
+  if(over || sel === null) return;
+  const f = byId(sel);
+  if(!f || f.t !== turn || f.a) return;
+
+  const act = document.getElementById('act');
+  const endBtn = act.querySelector('.end');
+
+  // Режим меню дриблинга
+  if(mode === 'dribbleMenu'){
+    act.innerHTML = '';
+    const title = document.createElement('div');
+    title.textContent = '🏀 Дриблинг:';
+    title.style.cssText = 'color:#fbbf24;font-weight:bold;font-size:13px;width:100%;margin-bottom:4px';
+    act.appendChild(title);
+
+    DRIBBLES.forEach(function(dr){
+      const b = document.createElement('button');
+      b.textContent = dr.n + ' (' + dr.c + ')';
+      b.style.background = '#8b5cf6';
+      b.disabled = f.o < dr.c;
+      b.title = dr.d;
+      b.onclick = function(){ chooseDribble(dr); };
+      act.appendChild(b);
+    });
+
+    const back = document.createElement('button');
+    back.textContent = '← Назад';
+    back.style.background = '#6b7280';
+    back.onclick = function(){ mode = 'sel'; ui(); draw(); };
+    act.appendChild(back);
+
+    // Показать бонусы
+    if(f.shootBonus){
+      const info = document.getElementById('figInfo');
+      info.innerHTML += '<br><span style="color:#22c55e">Бонус к броску: +' + f.shootBonus + '</span>';
+    }
+    return;
+  }
+
+  // Обычный режим — кнопка Дриблинг
+  if(mode !== 'sel') return;
+  if(ball !== f.i) return;
+  if(f.o < 1) return;
+
+  const dr = document.createElement('button');
+  dr.textContent = '🏀 Дриблинг';
+  dr.style.background = '#8b5cf6';
+  dr.style.fontWeight = 'bold';
+  dr.onclick = openDribbleMenu;
+  if(endBtn) act.insertBefore(dr, endBtn); else act.appendChild(dr);
+};
+
+// --- Учёт shootBonus в бросках ---
+const _v8_doShoot = doShoot;
+doShoot = function(){
+  const f = byId(sel);
+  if(!f || ball !== f.i || f.o < 2) return;
+  // Применяем бонус — добавляем прямо к b
+  const bonus = f.shootBonus || 0;
+  if(bonus){
+    f.b += bonus;
+    logMsg('Бонус дриблинга: +' + bonus);
+  }
+  _v8_doShoot();
+  // Откатываем бонус после броска
+  if(bonus) f.b -= bonus;
+  f.shootBonus = 0;
+};
+
+const _v8_doDunk = doDunk;
+doDunk = function(){
+  const f = byId(sel);
+  if(!f) return;
+  f.shootBonus = 0;
+  _v8_doDunk();
+};
+
+const _v8_doFloater = doFloater;
+doFloater = function(){
+  const f = byId(sel);
+  if(!f) return;
+  f.shootBonus = 0;
+  _v8_doFloater();
+};
+
+const _v8_doDeepThree = doDeepThree;
+doDeepThree = function(){
+  const f = byId(sel);
+  if(!f) return;
+  f.shootBonus = 0;
+  _v8_doDeepThree();
+};
+
+// Сброс бонуса при движении
+const _v8_handleClick = handleClick;
+handleClick = function(col, row){
+  const f = (sel !== null) ? byId(sel) : null;
+  if(f && f.shootBonus && mode === 'sel'){
+    // Если это движение — сбрасываем бонус
+    if(hl.some(function(h){ return h.c === col && h.r === row; })){
+      f.shootBonus = 0;
+      logMsg('Бонус дриблинга сброшен');
+    }
+  }
+  _v8_handleClick(col, row);
+};
+
+// Сброс при завершении хода
+const _v8_end = end;
+end = function(){
+  if(sel !== null){
+    const f = byId(sel);
+    if(f) f.shootBonus = 0;
+  }
+  mode = 'sel';
+  _v8_end();
+};
+
+logMsg('Патч v8: дриблинг-приёмы загружены');
+// ============================================================
+// ЧАСТЬ 8b: Дриблинг-движения (заменяет патч v8)
+// ============================================================
+
+let dribbleDef = null, dribbleMaxDist = 1, dribbleType = '';
+
+const DRIBBLES2 = [
+  {n:'Кроссовер', m:'cross', c:1, dist:1, needDef:1, move:1,
+   d:'Пройти сквозь защитника на 1 гекс'},
+  {n:'Спин-мув', m:'spin', c:2, dist:2, needDef:1, move:1,
+   d:'Пройти сквозь защитника на 2 гекса'},
+  {n:'Евростеп', m:'euro', c:2, dist:2, needDef:1, move:1,
+   d:'Пройти сквозь +2 к броску'},
+  {n:'Анкл-брейкер', m:'ankle', c:3, dist:1, needDef:1, move:1,
+   d:'Защитник падает, ты проходишь'},
+  {n:'Хезитейшн', m:'hesi', c:1, needDef:1, effect:1,
+   d:'Защитник теряет 1 ОД'},
+  {n:'Между ног', m:'between', c:1,
+   d:'+2 к следующему броску'},
+  {n:'Степ-бэк', m:'stepback', c:2,
+   d:'Отход назад +3 к броску'}
+];
+
+// --- Генерация целей за защитниками ---
+function buildDribbleTargets(maxDist){
+  const f = byId(sel);
+  const targets = [];
+  const dirs = [[1,0],[-1,0],[0,1],[0,-1],[1,-1],[-1,1]];
+  const myAx = toAx(f.c, f.r);
+  dirs.forEach(function(d){
+    const midQ = myAx.q + d[0];
+    const midR = myAx.r + d[1];
+    const midOff = toOff(midQ, midR);
+    if(midOff.c < 0 || midOff.c >= C || midOff.r < 0 || midOff.r >= R) return;
+    const def = figAt(midOff.c, midOff.r);
+    if(!def || def.t === f.t || def.c < 0) return;
+    for(let i = 1; i <= maxDist; i++){
+      const tq = myAx.q + d[0] * (1 + i);
+      const tr = myAx.r + d[1] * (1 + i);
+      const tOff = toOff(tq, tr);
+      if(tOff.c < 0 || tOff.c >= C || tOff.r < 0 || tOff.r >= R) break;
+      if(figAt(tOff.c, tOff.r)) break;
+      targets.push({c: tOff.c, r: tOff.r, m:'dribble', defId: def.i, steps: i});
+    }
+  });
+  return targets;
+}
+
+// --- Выбор приёма ---
+function pickDribble(dr){
+  const f = byId(sel);
+  if(!f || ball !== f.i) return;
+  if(f.o < dr.c){ logMsg('Мало ОД'); return; }
+
+  if(dr.needDef){
+    const defs = fig.filter(function(g){
+      return g.t !== f.t && g.c >= 0 && dist(g.c, g.r, f.c, f.r) === 1;
+    });
+    if(!defs.length){ logMsg('Нет защитника рядом'); return; }
+  }
+
+  // Движения — режим выбора гекса
+  if(dr.move){
+    dribbleType = dr.m;
+    dribbleMaxDist = dr.dist;
+    mode = 'dribbleTarget';
+    hl = buildDribbleTargets(dr.dist);
+    if(!hl.length){ logMsg('Негде пройти'); mode='sel'; hl=[]; ui(); draw(); return; }
+    ui(); draw();
+    return;
+  }
+
+  // Эффекты без движения
+  f.o -= dr.c;
+  if(dr.m === 'between'){
+    f.shootBonus = (f.shootBonus || 0) + 2;
+    logMsg('Между ног: +2 к броску');
+    popText('+2', cen(f.c, f.r).x, cen(f.c, f.r).y - 25, '#22c55e', 16);
+  } else if(dr.m === 'stepback'){
+    const back = f.t === 0 ? {dc:0, dr:1} : {dc:0, dr:-1};
+    const tc = f.c + back.dc, tr = f.r + back.dr;
+    if(tc < 0 || tc >= C || tr < 0 || tr >= R || figAt(tc, tr)){
+      logMsg('Негде отойти'); f.o += dr.c;
+    } else {
+      f.c = tc; f.r = tr; f.px = undefined; f.py = undefined;
+      f.shootBonus = (f.shootBonus || 0) + 3;
+      logMsg('Степ-бэк: +3 к броску');
+      popText('STEP BACK', cen(f.c, f.r).x, cen(f.c, f.r).y - 25, '#fbbf24', 14);
+    }
+  } else if(dr.m === 'hesi'){
+    const defs = fig.filter(function(g){
+      return g.t !== f.t && g.c >= 0 && dist(g.c, g.r, f.c, f.r) === 1;
+    });
+    const def = defs[0];
+    const roll = Math.floor(Math.random()*6) + 1;
+    const defRoll = Math.floor(Math.random()*6) + 1;
+    const atk = f.d + roll;
+    const def_ = def.z + defRoll;
+    logMsg('Хезитейшн: ' + atk + ' vs ' + def_);
+    if(atk >= def_){
+      def.o = Math.max(0, def.o - 1);
+      logMsg('✓ ' + def.n + ' теряет 1 ОД');
+      popText('HESI!', cen(f.c, f.r).x, cen(f.c, f.r).y - 25, '#3b82f6', 14);
+    } else {
+      logMsg('✗ Хезитейшн не удался');
+    }
+  }
+  mode = 'sel';
+  if(f.o <= 0) end(); else { reHL(); ui(); draw(); }
+}
+
+// --- Выполнение движения ---
+function execDribbleMove(t){
+  const f = byId(sel);
+  const def = byId(t.defId);
+  const dr = DRIBBLES2.find(function(d){ return d.m === dribbleType; });
+  if(!f || !def || !dr) return;
+  if(f.o < dr.c) return;
+  f.o -= dr.c;
+
+  const roll = Math.floor(Math.random()*6) + 1;
+  const defRoll = Math.floor(Math.random()*6) + 1;
+  let atkBonus = (f.bl > 0) ? -2 : 0;
+  const pen = (dribbleType === 'ankle') ? -3 : 0;
+  const atk = f.d + atkBonus + pen + roll;
+  const def_ = def.z + defRoll;
+
+  logMsg(dr.n + ': Дри ' + atk + ' vs Защ ' + def_);
+
+  if(atk >= def_){
+    // Успех — двигаемся
+    const p = cen(t.c, t.r);
+    popText(dr.n.toUpperCase() + '!', p.x, p.y - 30, '#22c55e', 16);
+    f.c = t.c; f.r = t.r; f.px = undefined; f.py = undefined;
+    logMsg('✓ Прошёл сквозь ' + def.n);
+
+    if(dribbleType === 'ankle'){
+      def.fr = 1;
+      logMsg('★ ' + def.n + ' падает!');
+      popText('ANKLE!', cen(def.c, def.r).x, cen(def.c, def.r).y - 30, '#ef4444', 18);
+    } else if(dribbleType === 'euro'){
+      f.shootBonus = (f.shootBonus || 0) + 2;
+      logMsg('+2 к след. броску');
+    } else if(dribbleType === 'spin'){
+      def.o = Math.max(0, def.o - 1);
+      logMsg(def.n + ' теряет 1 ОД');
+    }
+  } else {
+    // Провал — остаёмся
+    const p = cen(f.c, f.r);
+    popText('✗', p.x, p.y - 30, '#ef4444', 22);
+    logMsg('✗ ' + dr.n + ' провалился');
+    f.o -= 1; // доп. штраф
+  }
+
+  mode = 'sel'; hl = [];
+  if(f.o <= 0) end(); else { reHL(); ui(); draw(); }
+}
+
+// --- Обработка клика в режиме dribbleTarget ---
+const _v8b_handleModeClick = handleModeClick;
+handleModeClick = function(col, row){
+  if(mode === 'dribbleTarget'){
+    const t = hl.find(function(h){ return h.c === col && h.r === row; });
+    if(t) execDribbleMove(t);
+    else { mode = 'sel'; hl = []; reHL(); ui(); draw(); }
+    return;
+  }
+  _v8b_handleModeClick(col, row);
+};
+
+// --- UI ---
+const _v8b_ui = ui;
+ui = function(){
+  _v8b_ui();
+  if(over || sel === null) return;
+  const f = byId(sel);
+  if(!f || f.t !== turn || f.a) return;
+
+  const act = document.getElementById('act');
+
+  // Режим цели дриблинга
+  if(mode === 'dribbleTarget'){
+    act.innerHTML = '';
+    const title = document.createElement('div');
+    title.textContent = 'Выбери гекс для прохода';
+    title.style.cssText = 'color:#c084fc;font-weight:bold;font-size:13px;width:100%;margin-bottom:4px';
+    act.appendChild(title);
+    const back = document.createElement('button');
+    back.textContent = '← Отмена';
+    back.style.background = '#6b7280';
+    back.onclick = function(){ mode = 'sel'; hl = []; reHL(); ui(); draw(); };
+    act.appendChild(back);
+    return;
+  }
+
+  // Меню приёмов
+  if(mode === 'dribbleMenu'){
+    act.innerHTML = '';
+    const title = document.createElement('div');
+    title.textContent = '🏀 Дриблинг:';
+    title.style.cssText = 'color:#fbbf24;font-weight:bold;font-size:13px;width:100%;margin-bottom:4px';
+    act.appendChild(title);
+
+    DRIBBLES2.forEach(function(dr){
+      const b = document.createElement('button');
+      b.textContent = dr.n + ' (' + dr.c + ')';
+      b.style.background = '#8b5cf6';
+      b.disabled = f.o < dr.c;
+      b.title = dr.d;
+      b.onclick = function(){ pickDribble(dr); };
+      act.appendChild(b);
+    });
+
+    const back = document.createElement('button');
+    back.textContent = '← Назад';
+    back.style.background = '#6b7280';
+    back.onclick = function(){ mode = 'sel'; ui(); draw(); };
+    act.appendChild(back);
+    return;
+  }
+
+  // Обычный режим — кнопка Дриблинг
+  if(mode !== 'sel') return;
+  if(ball !== f.i) return;
+  if(f.o < 1) return;
+
+  const endBtn = act.querySelector('.end');
+  const dr = document.createElement('button');
+  dr.textContent = '🏀 Дриблинг';
+  dr.style.background = '#8b5cf6';
+  dr.style.fontWeight = 'bold';
+  dr.onclick = function(){ mode = 'dribbleMenu'; ui(); draw(); };
+  if(endBtn) act.insertBefore(dr, endBtn); else act.appendChild(dr);
+};
+
+logMsg('Патч v8b: дриблинг-движения загружены');
+// ============================================================
+// ПАТЧ: Кнопка "Завершить" (для одной фигуры)
+// ============================================================
+
+function endFigure(){
+  if(sel === null) return;
+  end();
+}
+
+const _vEnd_ui = ui;
+ui = function(){
+  _vEnd_ui();
+
+  if(over || sel === null) return;
+  const f = byId(sel);
+  if(!f || f.t !== turn || f.a) return;
+
+  const act = document.getElementById('act');
+  // Не добавляем в спец.режимах
+  if(mode !== 'sel') return;
+
+  // Убираем старые кнопки "Завершить" (если дублируются)
+  Array.from(act.querySelectorAll('[data-endfig]')).forEach(function(e){ e.remove(); });
+
+  const b = document.createElement('button');
+  b.textContent = 'Завершить';
+  b.dataset.endfig = '1';
+  b.style.background = '#3b82f6';
+  b.onclick = endFigure;
+  act.appendChild(b);
+};
+
+logMsg('Патч: кнопка Завершить + адаптивные гексы');
+// ============================================================
+// ПАТЧ vEnd2: Фикс дубля Дриблинг + Горизонтальный режим
+// ============================================================
+
+// ---- 1. Фикс дубля кнопки Дриблинг ----
+const _vE2_ui = ui;
+ui = function(){
+  _vE2_ui();
+  const act = document.getElementById('act');
+  if(!act) return;
+  const drBtns = Array.from(act.querySelectorAll('button')).filter(function(b){
+    return b.textContent.indexOf('Дриблинг') >= 0;
+  });
+  for(let i = 1; i < drBtns.length; i++) drBtns[i].remove();
+};
+
+// ---- 2. CSS для горизонтального режима ----
+const styleTag = document.createElement('style');
+styleTag.textContent = `
+@media (orientation: landscape) and (max-height: 600px) {
+  #game { flex-direction: row !important; }
+  #head {
+    position: absolute !important;
+    top: 0; left: 0; right: 0;
+    height: 30px;
+    z-index: 20;
+    padding: 4px 8px !important;
+    font-size: 12px !important;
+  }
+  #head button { padding: 3px 8px !important; font-size: 11px !important; }
+  #canvasWrap {
+    padding-top: 32px;
+    padding-bottom: 4px;
+  }
+  #bottom {
+    width: 210px !important;
+    max-width: 32vw !important;
+    min-height: 0 !important;
+    max-height: 100vh;
+    overflow-y: auto;
+    padding: 5px !important;
+  }
+  #act button {
+    font-size: 11px !important;
+    padding: 6px 8px !important;
+    margin: 1px !important;
+  }
+  #log { max-height: 70px; font-size: 10px; }
+  #figInfo { font-size: 10px; max-width: 160px; padding: 6px 8px; }
+}
+`;
+document.head.appendChild(styleTag);
+
+// ---- 3. Кнопка в главном меню ----
+const mainMenu = document.getElementById('main');
+const rotateBtn = document.createElement('button');
+rotateBtn.id = 'mRotate';
+rotateBtn.className = 'big-btn';
+rotateBtn.textContent = '🔄 Горизонтальный режим';
+rotateBtn.style.background = '#06b6d4';
+// Вставляем перед "Как играть"
+const helpBtn = document.getElementById('mHelp');
+if(helpBtn && helpBtn.parentNode){
+  helpBtn.parentNode.insertBefore(rotateBtn, helpBtn);
+} else {
+  mainMenu.appendChild(rotateBtn);
+}
+
+rotateBtn.onclick = async function(){
+  try {
+    const el = document.documentElement;
+    if(el.requestFullscreen) await el.requestFullscreen();
+    else if(el.webkitRequestFullscreen) el.webkitRequestFullscreen();
+
+    if(screen.orientation && screen.orientation.lock){
+      await screen.orientation.lock('landscape');
+      logMsg('Горизонтальный режим включён');
+    } else {
+      alert('Поверни телефон вручную — режим включён. Для выхода выйди из полного экрана.');
+    }
+  } catch(e){
+    alert('Автоматический поворот не сработал.\n\nПоверни телефон вручную и включи полный экран через меню браузера.');
+  }
+};
+
+logMsg('Патч vEnd2: фикс дубля + горизонт');
+// ============================================================
+// ПАТЧ v9: Перехват вблизи + компактное поле
+// ============================================================
+(function(){
+
+  // ---- 1. Перехват только вблизи ----
+  const _v9_doPass = doPass;
+  doPass = function(targetId){
+    const f = byId(sel);
+    if(!f || ball !== f.i || f.o < 1) return;
+    const t = byId(targetId);
+
+    let best = null, bestRoll = 0;
+    fig.forEach(function(g){
+      if(g.t === f.t) return;
+      if(g.c < 0) return;
+      const dFrom = dist(g.c, g.r, f.c, f.r);
+      const dTo = dist(g.c, g.r, t.c, t.r);
+      const minD = Math.min(dFrom, dTo);
+      // Только вплотную к пасующему или получающему
+      if(minD > 1) return;
+      const roll = g.z + Math.floor(Math.random()*6) + 1 + 2;
+      if(roll > bestRoll){ bestRoll = roll; best = g; }
+    });
+
+    if(best){
+      const passRoll = f.d + Math.floor(Math.random()*6) + 1;
+      logMsg('Перехват ' + best.n + ' ' + bestRoll + ' vs пас ' + passRoll);
+      if(bestRoll >= passRoll){
+        f.o -= 1;
+        ball = best.i;
+        delete holds[f.i];
+        logMsg('ПЕРЕХВАТ! ' + best.n);
+        mode = 'sel'; hl = [];
+        if(f.o <= 0) end(); else { reHL(); ui(); draw(); }
+        return;
+      }
+    }
+
+    ball = targetId;
+    f.o -= 1;
+    logMsg('Пас ' + f.n + ' → ' + t.n);
+    mode = 'sel'; hl = [];
+    if(f.o <= 0) end(); else { reHL(); ui(); draw(); }
+  };
+
+  // ---- 2. Компактное поле ----
+  // Переопределяем cen() с меньшим отступом
+  cen = function(c, r){
+    return {x: W * (c + 0.5 * (r & 1)) + W/2 + 4, y: H * r + S + 4};
+  };
+
+  // Переопределяем setupCanvas для меньшего canvas
+  setupCanvas = function(){
+    cv.width = Math.ceil(W * C + W/2 + 8);
+    cv.height = Math.ceil(H * (R-1) + S * 2 + 8);
+  };
+
+  // ---- 3. Уменьшаем панель кнопок ----
+  const st = document.createElement('style');
+  st.textContent = `
+    #bottom { min-height: 90px !important; padding: 5px !important; }
+    #act button { padding: 6px 9px !important; font-size: 11px !important; margin: 1px !important; }
+    #log { max-height: 45px !important; }
+  `;
+  document.head.appendChild(st);
+
+  // ---- 4. Перерисовать текущее поле ----
+  setupCanvas();
+  fig.forEach(function(f){ f.px = undefined; f.py = undefined; });
+  if(typeof render === 'function') render();
+
+  logMsg('Патч v9: перехват вблизи + компактное поле');
+})();
+// ============================================================
+// ПАТЧ v10: HiDPI — чёткое поле на телефоне
+// ============================================================
+(function(){
+  const dpr = Math.max(1, Math.min(3, window.devicePixelRatio || 1));
+  const logicalW = Math.ceil(W * C + W/2 + 8);
+  const logicalH = Math.ceil(H * (R-1) + S * 2 + 8);
+
+  // Сохраняем логические размеры
+  window.__CV_LOGICAL_W = logicalW;
+  window.__CV_LOGICAL_H = logicalH;
+
+  // Функция применения HiDPI
+  function applyHiDPI(){
+    cv.width = logicalW * dpr;
+    cv.height = logicalH * dpr;
+    cv.style.width = logicalW + 'px';
+    cv.style.height = logicalH + 'px';
+    cv.style.maxWidth = '100%';
+    cv.style.maxHeight = '100%';
+    x.setTransform(dpr, 0, 0, dpr, 0, 0);
+  }
+
+  applyHiDPI();
+
+  // Патчим setupCanvas, чтобы HiDPI сохранялся при пересоздании
+  setupCanvas = function(){ applyHiDPI(); };
+
+  // Новый обработчик кликов — на document (capture), чтобы обойти старый
+  document.addEventListener('click', function(e){
+    if(e.target !== cv) return;
+    e.stopImmediatePropagation();
+    e.preventDefault();
+
+    const r = cv.getBoundingClientRect();
+    const px = (e.clientX - r.left) * (logicalW / r.width);
+    const py = (e.clientY - r.top) * (logicalH / r.height);
+
+    let cl = null, bd = S * 0.9;
+    for(let rr = 0; rr < R; rr++) for(let cc = 0; cc < C; cc++){
+      const p = cen(cc, rr);
+      const d = Math.hypot(px - p.x, py - p.y);
+      if(d < bd){ bd = d; cl = {c:cc, r:rr}; }
+    }
+    if(cl) handleClick(cl.c, cl.r);
+  }, true);
+
+  // Перерисовать поле
+  if(typeof render === 'function') render();
+
+  logMsg('HiDPI: поле стало чётче (DPR=' + dpr + ')');
+})();
+// ============================================================
+// ЧАСТЬ 10a: Онлайн-комнаты через PeerJS
+// ============================================================
+
+let peer = null;
+let conn = null;
+let isHost = false;
+let myTeam = -1;      // 0 = зелёные, 1 = красные
+let roomCode = '';
+
+// --- Показать экран онлайн ---
+function showOnlineScreen(){
+  document.getElementById('main').style.display = 'none';
+  document.getElementById('setup').style.display = 'none';
+  document.getElementById('game').style.display = 'none';
+  document.getElementById('onlineScreen').style.display = 'flex';
+  resetOnlineUI();
+}
+function hideOnlineScreen(){
+  document.getElementById('onlineScreen').style.display = 'none';
+  showMain();
+}
+function resetOnlineUI(){
+  document.getElementById('ocCreate').style.display = '';
+  document.getElementById('ocJoin').style.display = '';
+  document.getElementById('ocJoinBox').style.display = 'none';
+  document.getElementById('ocCode').style.display = 'none';
+  document.getElementById('ocBack').style.display = '';
+  setOnlineStatus('Выбери действие');
+}
+function setOnlineStatus(msg, color){
+  const el = document.getElementById('onlineStatus');
+  el.textContent = msg;
+  el.style.color = color || '#94a3b8';
+}
+
+// --- Создать комнату ---
+function createRoom(){
+  isHost = true;
+  myTeam = 0;
+  // Генерируем 4-значный код
+  roomCode = String(Math.floor(1000 + Math.random() * 9000));
+  setOnlineStatus('Подключение к серверу...');
+// Публичные STUN/TURN серверы для обхода NAT
+const peerConfig = {
+  debug: 1,
+  config: {
+    'iceServers': [
+      // Публичные STUN-серверы (бесплатные, помогают определить внешний IP)
+      { urls: 'stun:stun.l.google.com:19302' },
+      { urls: 'stun:stun1.l.google.com:19302' },
+      { urls: 'stun:stun2.l.google.com:19302' },
+      { urls: 'stun:stun3.l.google.com:19302' },
+      { urls: 'stun:stun4.l.google.com:19302' },
+      
+      // Публичный TURN-сервер от Metered (Open Relay) — ретрансляция трафика
+      {
+        urls: 'turn:openrelay.metered.ca:80',
+        username: 'openrelayproject',
+        credential: 'openrelayproject'
+      },
+      {
+        urls: 'turn:openrelay.metered.ca:443',
+        username: 'openrelayproject',
+        credential: 'openrelayproject'
+      },
+      {
+        urls: 'turn:openrelay.metered.ca:443?transport=tcp',
+        username: 'openrelayproject',
+        credential: 'openrelayproject'
+      }
+    ]
+  }
+};
+
+peer = new Peer(peerConfig);
+
+  peer.on('open', function(id){
+    document.getElementById('ocCreate').style.display = 'none';
+    document.getElementById('ocJoin').style.display = 'none';
+    document.getElementById('ocCode').style.display = '';
+    document.getElementById('ocCode').textContent = roomCode;
+    setOnlineStatus('Скажи другу код. Ждём подключения...', '#fbbf24');
+  });
+
+  peer.on('connection', function(c){
+    conn = c;
+    setOnlineStatus('Соединение установлено!', '#22c55e');
+    conn.on('open', function(){
+      conn.send({type: 'hello', team: 'green'});
+      setTimeout(function(){
+        startOnlineGame();
+      }, 500);
+    });
+    setupConnHandlers();
+  });
+
+  peer.on('error', function(err){
+    console.error(err);
+    setOnlineStatus('Ошибка: ' + err.message, '#ef4444');
+  });
+}
+
+// --- Присоединиться ---
+function joinRoom(){
+  isHost = false;
+  myTeam = 1;
+  document.getElementById('ocJoinBox').style.display = 'block';
+  setOnlineStatus('Введи код комнаты', '#fbbf24');
+  document.getElementById('ocJoin').style.display = 'none';
+  document.getElementById('ocCodeInput').focus();
+}
+
+function connectToRoom(){
+  const code = document.getElementById('ocCodeInput').value.trim();
+  if(code.length !== 4){ setOnlineStatus('Введи 4 цифры', '#ef4444'); return; }
+  roomCode = code;
+  setOnlineStatus('Подключение к комнате ' + code + '...');
+
+  peer = new Peer({debug: 1});
+  peer.on('open', function(){
+    conn = peer.connect('insect-ball-' + code, {reliable: true});
+    conn.on('open', function(){
+      setOnlineStatus('Подключено!', '#22c55e');
+      setupConnHandlers();
+      setTimeout(function(){
+        startOnlineGame();
+      }, 500);
+    });
+    conn.on('error', function(err){
+      setOnlineStatus('Ошибка соединения: ' + err.message, '#ef4444');
+    });
+  });
+  peer.on('error', function(err){
+    console.error(err);
+    setOnlineStatus('Ошибка: комната не найдена', '#ef4444');
+  });
+}
+
+// --- Обработчики сообщений ---
+function setupConnHandlers(){
+  conn.on('data', function(data){
+    if(window.handleNetMessage) window.handleNetMessage(data);
+  });
+  conn.on('close', function(){
+    setOnlineStatus('Соединение закрыто', '#ef4444');
+    setTimeout(hideOnlineScreen, 2000);
+  });
+}
+
+// --- Отправка сообщения ---
+function sendNet(data){
+  if(conn && conn.open){
+    try { conn.send(data); } catch(e){ console.error(e); }
+  }
+}
+
+// --- Старт онлайн-игры (заглушка, полная — в 10b) ---
+function startOnlineGame(){
+  document.getElementById('onlineScreen').style.display = 'none';
+  document.getElementById('main').style.display = 'none';
+  // Пока — показываем экран выбора состава (пока без синхронизации)
+  showSetup();
+  logMsg('Онлайн: ты за ' + (myTeam === 0 ? 'Зелёных' : 'Красных'));
+  const who = document.getElementById('who');
+  if(who){
+    who.textContent = myTeam === 0 ? 'Зелёные (ты)' : 'Зелёные';
+  }
+}
+
+// --- Кнопки ---
+document.getElementById('ocCreate').onclick = createRoom;
+document.getElementById('ocJoin').onclick = joinRoom;
+document.getElementById('ocBack').onclick = hideOnlineScreen;
+document.getElementById('ocCodeInput').addEventListener('input', function(){
+  if(this.value.length === 4) connectToRoom();
+});
+
+// --- Активируем кнопку "Онлайн" в главном меню ---
+const mOnline = document.getElementById('mOnline');
+mOnline.disabled = false;
+mOnline.style.opacity = '1';
+mOnline.textContent = 'Онлайн';
+mOnline.style.cursor = 'pointer';
+mOnline.onclick = showOnlineScreen;
+
+logMsg('ЧАСТЬ 10a: Онлайн-комнаты загружены');
+</script>
+</body>
+</html>
