@@ -50,6 +50,7 @@ canvas{max-width:100%;max-height:100%;display:block}
 </style>
 </head>
 <script src="https://unpkg.com/peerjs@1.5.4/dist/peerjs.min.js"></script>
+  <script src="https://unpkg.com/mqtt@5.10.1/dist/mqtt.min.js"></script>
 <body>
 
 <div id="main" class="overlay">
@@ -3136,6 +3137,132 @@ logMsg('ЧАСТЬ 10a: Онлайн-комнаты загружены');
       setOnlineStatus('Trystero не загрузился: ' + e.message, '#ef4444');
     }
   }, 1000);
+})();
+  // ============================================================
+// ПАТЧ v12: Онлайн через MQTT (публичный брокер)
+// ============================================================
+(function(){
+
+  let mqttClient = null;
+  const BROKER = 'wss://broker.emqx.io:8084/mqtt';
+  const APP = 'insectball-v1-nikita';
+
+  // --- Создать комнату ---
+  createRoom = function(){
+    isHost = true;
+    myTeam = 0;
+    roomCode = String(Math.floor(1000 + Math.random() * 9000));
+    setOnlineStatus('Подключение к брокеру...', '#fbbf24');
+
+    try {
+      mqttClient = mqtt.connect(BROKER, { clientId: 'host_' + roomCode + '_' + Date.now() });
+    } catch(e){
+      setOnlineStatus('Ошибка: ' + e.message, '#ef4444');
+      return;
+    }
+
+    mqttClient.on('connect', function(){
+      const topic = APP + '/room/' + roomCode;
+      mqttClient.subscribe(topic, function(err){
+        if(err){ setOnlineStatus('Ошибка подписки: ' + err.message, '#ef4444'); return; }
+        document.getElementById('ocCreate').style.display = 'none';
+        document.getElementById('ocJoin').style.display = 'none';
+        document.getElementById('ocCode').style.display = '';
+        document.getElementById('ocCode').textContent = roomCode;
+        setOnlineStatus('Скажи другу код. Ждём подключения...', '#fbbf24');
+        logMsg('Комната: ' + roomCode);
+        // Шлём приветствие в топик — гость это получит
+        setTimeout(function(){
+          mqttClient.publish(topic, JSON.stringify({ type: 'host_here', from: 'host' }));
+        }, 500);
+      });
+    });
+
+    mqttClient.on('message', function(topic, payload){
+      try {
+        const data = JSON.parse(payload.toString());
+        if(data.type === 'guest_join'){
+          setOnlineStatus('Соединение установлено!', '#22c55e');
+          conn = { open: true };
+          logMsg('Гость подключился');
+          setTimeout(function(){ startOnlineGame(); }, 500);
+        } else if(window.handleNetMessage){
+          window.handleNetMessage(data);
+        }
+      } catch(e){ console.error(e); }
+    });
+
+    mqttClient.on('error', function(err){
+      setOnlineStatus('Ошибка MQTT: ' + err.message, '#ef4444');
+    });
+  };
+
+  // --- Присоединиться ---
+  connectToRoom = function(){
+    const code = document.getElementById('ocCodeInput').value.trim();
+    if(code.length !== 4){ setOnlineStatus('Введи 4 цифры', '#ef4444'); return; }
+    roomCode = code;
+    isHost = false;
+    myTeam = 1;
+    setOnlineStatus('Подключение к брокеру...', '#fbbf24');
+
+    try {
+      mqttClient = mqtt.connect(BROKER, { clientId: 'guest_' + code + '_' + Date.now() });
+    } catch(e){
+      setOnlineStatus('Ошибка: ' + e.message, '#ef4444');
+      return;
+    }
+
+    mqttClient.on('connect', function(){
+      const topic = APP + '/room/' + roomCode;
+      mqttClient.subscribe(topic, function(err){
+        if(err){ setOnlineStatus('Ошибка подписки: ' + err.message, '#ef4444'); return; }
+        setOnlineStatus('Ищу хоста...', '#fbbf24');
+        // Кричим в топик, что мы здесь
+        mqttClient.publish(topic, JSON.stringify({ type: 'guest_join', from: 'guest' }));
+        // Через 2 сек — считаем что соединились (хост уже слушает)
+        setTimeout(function(){
+          if(!conn){
+            setOnlineStatus('Соединение установлено!', '#22c55e');
+            conn = { open: true };
+            startOnlineGame();
+          }
+        }, 1500);
+      });
+    });
+
+    mqttClient.on('message', function(topic, payload){
+      try {
+        const data = JSON.parse(payload.toString());
+        if(data.type === 'host_here' && !conn){
+          setOnlineStatus('Соединение установлено!', '#22c55e');
+          conn = { open: true };
+          logMsg('Хост найден');
+          setTimeout(function(){ startOnlineGame(); }, 500);
+        } else if(window.handleNetMessage){
+          window.handleNetMessage(data);
+        }
+      } catch(e){ console.error(e); }
+    });
+
+    mqttClient.on('error', function(err){
+      setOnlineStatus('Ошибка MQTT: ' + err.message, '#ef4444');
+    });
+  };
+
+  // --- Отправка данных ---
+  sendNet = function(data){
+    if(!mqttClient) return;
+    const topic = APP + '/room/' + roomCode;
+    try {
+      mqttClient.publish(topic, JSON.stringify(data));
+    } catch(e){ console.error(e); }
+  };
+
+  // Заглушка
+  setupConnHandlers = function(){ /* no-op */ };
+
+  logMsg('Патч v12: MQTT загружен');
 })();
 </script>
 </body>
