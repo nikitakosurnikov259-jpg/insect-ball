@@ -3032,6 +3032,88 @@ logMsg('ЧАСТЬ 10a: Онлайн-комнаты загружены');
 
   logMsg('Патч: подключение к своему серверу');
 })();
+  // ============================================================
+// ПАТЧ v11: Trystero — P2P без сервера (BitTorrent-трекеры)
+// ============================================================
+(async function(){
+  try {
+    const { joinRoom } = await import('https://esm.sh/trystero@0.21.6/torrent');
+
+    const APP_ID = 'insectball-nikitakosurnikov-v1';
+    let room = null;
+    let sendDataFn = null;
+
+    // Создать комнату
+    createRoom = function(){
+      isHost = true;
+      myTeam = 0;
+      roomCode = String(Math.floor(1000 + Math.random() * 9000));
+      setOnlineStatus('Подключение к трекеру...', '#fbbf24');
+
+      room = joinRoom({ appId: APP_ID }, 'room-' + roomCode);
+
+      const [send] = room.makeAction('data');
+      sendDataFn = send;
+      room.onMessage('data', function(data){ if(window.handleNetMessage) window.handleNetMessage(data); });
+
+      room.onPeerJoin(function(){
+        setOnlineStatus('Соединение установлено!', '#22c55e');
+        conn = { open: true };
+        setTimeout(function(){ startOnlineGame(); }, 500);
+      });
+
+      room.onPeerLeave(function(){
+        setOnlineStatus('Соединение закрыто', '#ef4444');
+      });
+
+      document.getElementById('ocCreate').style.display = 'none';
+      document.getElementById('ocJoin').style.display = 'none';
+      document.getElementById('ocCode').style.display = '';
+      document.getElementById('ocCode').textContent = roomCode;
+      setOnlineStatus('Скажи другу код. Ждём подключения...', '#fbbf24');
+      logMsg('Комната: ' + roomCode);
+    };
+
+    // Подключиться
+    connectToRoom = function(){
+      const code = document.getElementById('ocCodeInput').value.trim();
+      if(code.length !== 4){ setOnlineStatus('Введи 4 цифры', '#ef4444'); return; }
+      roomCode = code;
+      isHost = false;
+      myTeam = 1;
+      setOnlineStatus('Подключение к трекеру...', '#fbbf24');
+
+      room = joinRoom({ appId: APP_ID }, 'room-' + roomCode);
+
+      const [send] = room.makeAction('data');
+      sendDataFn = send;
+      room.onMessage('data', function(data){ if(window.handleNetMessage) window.handleNetMessage(data); });
+
+      room.onPeerJoin(function(){
+        setOnlineStatus('Подключено!', '#22c55e');
+        conn = { open: true };
+        setTimeout(function(){ startOnlineGame(); }, 500);
+      });
+
+      room.onPeerLeave(function(){
+        setOnlineStatus('Соединение закрыто', '#ef4444');
+      });
+    };
+
+    // Отправка данных
+    sendNet = function(data){
+      if(sendDataFn) try { sendDataFn(data); } catch(e){ console.error(e); }
+    };
+
+    // Пустой обработчик (Trystero сам подписывается)
+    setupConnHandlers = function(){ /* no-op */ };
+
+    logMsg('Патч v11: Trystero загружен');
+  } catch(e){
+    console.error('Trystero load failed:', e);
+    logMsg('Ошибка загрузки Trystero: ' + e.message);
+  }
+})();
 </script>
 </body>
 </html>
