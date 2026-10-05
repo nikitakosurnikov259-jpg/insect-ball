@@ -3264,6 +3264,76 @@ logMsg('ЧАСТЬ 10a: Онлайн-комнаты загружены');
 
   logMsg('Патч v12: MQTT загружен');
 })();
+  // ============================================================
+// ПАТЧ vFinal: Возврат к оригинальному PeerJS (работает через VPN)
+// ============================================================
+(function(){
+
+  // Перезаписываем создание комнаты — чистый PeerJS
+  createRoom = function(){
+    isHost = true;
+    myTeam = 0;
+    roomCode = String(Math.floor(1000 + Math.random() * 9000));
+    setOnlineStatus('Подключение к серверу...', '#fbbf24');
+
+    peer = new Peer('insect-ball-v2-' + roomCode, { debug: 1 });
+
+    peer.on('open', function(id){
+      document.getElementById('ocCreate').style.display = 'none';
+      document.getElementById('ocJoin').style.display = 'none';
+      document.getElementById('ocCode').style.display = '';
+      document.getElementById('ocCode').textContent = roomCode;
+      setOnlineStatus('Скажи другу код. Ждём подключения...', '#fbbf24');
+      logMsg('Комната создана: ' + roomCode);
+    });
+
+    peer.on('connection', function(c){
+      conn = c;
+      setOnlineStatus('Соединение установлено!', '#22c55e');
+      conn.on('open', function(){
+        try { conn.send({ type: 'hello', team: 'green' }); } catch(e){}
+        setTimeout(function(){ startOnlineGame(); }, 500);
+      });
+      setupConnHandlers();
+    });
+
+    peer.on('error', function(err){
+      console.error(err);
+      setOnlineStatus('Ошибка: ' + err.type + ' — ' + err.message, '#ef4444');
+    });
+  };
+
+  // Перезаписываем подключение
+  connectToRoom = function(){
+    const code = document.getElementById('ocCodeInput').value.trim();
+    if(code.length !== 4){ setOnlineStatus('Введи 4 цифры', '#ef4444'); return; }
+    roomCode = code;
+    isHost = false;
+    myTeam = 1;
+    setOnlineStatus('Подключение к комнате ' + code + '...');
+
+    peer = new Peer({ debug: 1 });
+
+    peer.on('open', function(){
+      conn = peer.connect('insect-ball-v2-' + code, { reliable: true });
+      conn.on('open', function(){
+        setOnlineStatus('Подключено!', '#22c55e');
+        setupConnHandlers();
+        setTimeout(function(){ startOnlineGame(); }, 500);
+      });
+      conn.on('error', function(err){
+        setOnlineStatus('Ошибка соединения: ' + err.message, '#ef4444');
+      });
+    });
+
+    peer.on('error', function(err){
+      console.error(err);
+      setOnlineStatus('Ошибка: ' + err.type, '#ef4444');
+    });
+  };
+
+  logMsg('Патч vFinal: PeerJS восстановлен');
+})();
 </script>
 </body>
 </html>
