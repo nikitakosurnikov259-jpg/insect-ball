@@ -2949,6 +2949,89 @@ mOnline.style.cursor = 'pointer';
 mOnline.onclick = showOnlineScreen;
 
 logMsg('ЧАСТЬ 10a: Онлайн-комнаты загружены');
+// ============================================================
+// ПАТЧ: Подключаем игру к своему Cloudflare Workers серверу
+// ============================================================
+(function(){
+
+  const MY_HOST = 'peers-server.nikitakosurnikov259.workers.dev';
+  const PEER_OPTS = {
+    host: MY_HOST,
+    port: 443,
+    secure: true,
+    path: '/',
+    key: 'peerjs',
+    debug: 1,
+    config: {
+      'iceServers': [
+        { urls: 'stun:stun.l.google.com:19302' },
+        { urls: 'stun:stun1.l.google.com:19302' },
+        { urls: 'stun:stun2.l.google.com:19302' }
+      ]
+    }
+  };
+
+  // Перезаписываем создание комнаты
+  createRoom = function(){
+    isHost = true;
+    myTeam = 0;
+    roomCode = String(Math.floor(1000 + Math.random() * 9000));
+    setOnlineStatus('Подключение к серверу...');
+
+    peer = new Peer('insect-ball-' + roomCode, PEER_OPTS);
+
+    peer.on('open', function(id){
+      document.getElementById('ocCreate').style.display = 'none';
+      document.getElementById('ocJoin').style.display = 'none';
+      document.getElementById('ocCode').style.display = '';
+      document.getElementById('ocCode').textContent = roomCode;
+      setOnlineStatus('Скажи другу код. Ждём подключения...', '#fbbf24');
+      logMsg('Комната создана: ' + roomCode);
+    });
+
+    peer.on('connection', function(c){
+      conn = c;
+      setOnlineStatus('Соединение установлено!', '#22c55e');
+      conn.on('open', function(){
+        conn.send({type: 'hello', team: 'green'});
+        setTimeout(function(){ startOnlineGame(); }, 500);
+      });
+      setupConnHandlers();
+    });
+
+    peer.on('error', function(err){
+      console.error(err);
+      setOnlineStatus('Ошибка: ' + err.type + ' — ' + err.message, '#ef4444');
+    });
+  };
+
+  // Перезаписываем подключение
+  connectToRoom = function(){
+    const code = document.getElementById('ocCodeInput').value.trim();
+    if(code.length !== 4){ setOnlineStatus('Введи 4 цифры', '#ef4444'); return; }
+    roomCode = code;
+    setOnlineStatus('Подключение к комнате ' + code + '...');
+
+    peer = new Peer(PEER_OPTS);
+    peer.on('open', function(){
+      conn = peer.connect('insect-ball-' + code, {reliable: true});
+      conn.on('open', function(){
+        setOnlineStatus('Подключено!', '#22c55e');
+        setupConnHandlers();
+        setTimeout(function(){ startOnlineGame(); }, 500);
+      });
+      conn.on('error', function(err){
+        setOnlineStatus('Ошибка соединения: ' + err.message, '#ef4444');
+      });
+    });
+    peer.on('error', function(err){
+      console.error(err);
+      setOnlineStatus('Ошибка: ' + err.type, '#ef4444');
+    });
+  };
+
+  logMsg('Патч: подключение к своему серверу');
+})();
 </script>
 </body>
 </html>
