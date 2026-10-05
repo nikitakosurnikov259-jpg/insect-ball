@@ -3114,6 +3114,29 @@ logMsg('ЧАСТЬ 10a: Онлайн-комнаты загружены');
     logMsg('Ошибка загрузки Trystero: ' + e.message);
   }
 })();
+  // ============================================================
+// ПАТЧ: Показ ошибок Trystero на экране
+// ============================================================
+(function(){
+  // Перехватываем ошибки
+  window.addEventListener('error', function(e){
+    setOnlineStatus('⚠ ' + e.message, '#ef4444');
+  });
+  window.addEventListener('unhandledrejection', function(e){
+    setOnlineStatus('⚠ ' + (e.reason && e.reason.message ? e.reason.message : String(e.reason)), '#ef4444');
+  });
+
+  // Проверка загрузки Trystero
+  setTimeout(async function(){
+    try {
+      const mod = await import('https://esm.sh/trystero@0.21.6/torrent');
+      console.log('Trystero loaded:', mod);
+    } catch(e){
+      console.error('Trystero FAILED:', e);
+      setOnlineStatus('Trystero не загрузился: ' + e.message, '#ef4444');
+    }
+  }, 1000);
+})();
 </script>
 </body>
 </html>
