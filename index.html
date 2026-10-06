@@ -2523,6 +2523,169 @@ function startOnlineMatch(){
 // ===== СТАРТ =====
 showMain();
 logMsg('✅ Готово! Играйте.');
+// ============================================================
+// ПАТЧ 1v1: Правило «выйди за дугу» (для игрока и ИИ)
+// ============================================================
+(function(){
+
+  function isOutOf3(f){
+    if(!f) return true;
+    const h = hoops[0];
+    return dist(f.c, f.r, h.c, h.r) >= 4;
+  }
+
+  // === 1. АВТО-ОБНОВЛЕНИЕ ФЛАГА ===
+  setInterval(function(){
+    if(gameMode !== '1v1' || over) {
+      clearPending[0] = false;
+      clearPending[1] = false;
+      return;
+    }
+    const bh = byId(ball);
+    if(!bh) return;
+    // Мяч внутри дуги → нужно выйти
+    clearPending[bh.t] = !isOutOf3(bh);
+  }, 150);
+
+  // === 2. БЛОКИРОВКА ВСЕХ БРОСКОВ ===
+  function checkClear(f, action){
+    if(gameMode !== '1v1') return true;
+    if(!f) return true;
+    if(!clearPending[f.t]) return true;
+    if(isOutOf3(f)) return true;
+    logMsg('⚠ Выйди за дугу!');
+    const p = cen(f.c, f.r);
+    popText('⚠ ЗА ДУГУ', p.x, p.y - 40, '#fbbf24', 14);
+    return false;
+  }
+
+  const _shoot = doShoot;
+  doShoot = function(){
+    const f = byId(sel);
+    if(f && !checkClear(f, 'shoot')) return;
+    return _shoot();
+  };
+
+  const _dunk = doDunk;
+  doDunk = function(){
+    const f = byId(sel);
+    if(f && !checkClear(f, 'dunk')) return;
+    return _dunk();
+  };
+
+  const _floater = doFloater;
+  doFloater = function(){
+    const f = byId(sel);
+    if(f && !checkClear(f, 'floater')) return;
+    return _floater();
+  };
+
+  const _deep = doDeepThree;
+  doDeepThree = function(){
+    const f = byId(sel);
+    if(f && !checkClear(f, 'deep')) return;
+    return _deep();
+  };
+
+  // === 3. ПРИОРИТЕТ ИИ: ВЫЙТИ ЗА ДУГУ ===
+  const _aiStep = aiStep;
+  aiStep = async function(f){
+    // В 1v1: если мяч у ИИ и он не за дугой — сначала выйти
+    if(gameMode === '1v1' && ball === f.i && !isOutOf3(f)){
+      if(f.o >= 1){
+        const h = hoops[0];
+        const opts = nb(f.c, f.r).filter(function(p){ return !figAt(p[0], p[1]); });
+        if(opts.length){
+          // Ищем гекс за дугой (дальше от кольца)
+          let best = null, bd = -1;
+          opts.forEach(function(p){
+            const dh = dist(p[0], p[1], h.c, h.r);
+            if(dh >= 4 && dh > bd){ bd = dh; best = p; }
+          });
+          // Если не нашли за дугой — идём просто дальше от кольца
+          if(!best){
+            opts.sort(function(a, b){
+              return dist(b[0], b[1], h.c, h.r) - dist(a[0], a[1], h.c, h.r);
+            });
+            best = opts[0];
+          }
+          if(best){
+            f.c = best[0]; f.r = best[1];
+            f.o -= 1;
+            f.px = undefined; f.py = undefined;
+            f.mv = true;
+            logMsg('🤖 ' + f.n + ': выход за дугу');
+            ui(); draw();
+            await new Promise(function(r){ setTimeout(r, 320); });
+            return 'move';
+          }
+        }
+      }
+      return null; // мяч внутри — ничего больше не делаем
+    }
+    return _aiStep(f);
+  };
+
+  // === 4. ВИЗУАЛЬНАЯ ПОДСВЕТКА ДУГИ ===
+  const _render = render;
+  render = function(){
+    _render();
+    if(gameMode !== '1v1' || over) return;
+    const bh = byId(ball);
+    if(!bh || !clearPending[bh.t]) return;
+    const h = hoops[0];
+    const hp = cen(h.c, h.r);
+    const threeR = 4.2 * W;
+    x.beginPath();
+    x.arc(hp.x, hp.y, threeR, Math.PI, Math.PI*2);
+    x.strokeStyle = 'rgba(251,191,36,0.95)';
+    x.lineWidth = 4;
+    x.setLineDash([8, 6]);
+    x.stroke();
+    x.setLineDash([]);
+    // Текст
+    x.fillStyle = 'rgba(251,191,36,0.95)';
+    x.font = 'bold 14px sans-serif';
+    x.textAlign = 'center';
+    x.textBaseline = 'middle';
+    x.fillText('ВЫВЕДИ ЗА ДУГУ', window.__CW / 2, window.__CH - 26);
+  };
+
+  // === 5. СБРОС ПРИ СМЕНЕ ХОДА / ГОЛЕ ===
+  const _end = end;
+  end = function(){
+    _end();
+    // Если ход перешёл другой команде — пересчитаем
+    setTimeout(function(){
+      if(gameMode !== '1v1' || over) return;
+      const bh = byId(ball);
+      if(!bh) return;
+      clearPending[bh.t] = !isOutOf3(bh);
+    }, 200);
+  };
+
+  const _reset = resetPositions;
+  resetPositions = function(t){
+    _reset(t);
+    if(gameMode !== '1v1') return;
+    setTimeout(function(){
+      const bh = byId(ball);
+      if(!bh) return;
+      clearPending[bh.t] = !isOutOf3(bh);
+      logMsg('🎯 ' + (clearPending[bh.t] ? 'Выйди за дугу!' : 'Можно атаковать'));
+    }, 300);
+  };
+
+  // === 6. СТАРТ ===
+  setTimeout(function(){
+    if(gameMode !== '1v1') return;
+    const bh = byId(ball);
+    if(!bh) return;
+    clearPending[bh.t] = !isOutOf3(bh);
+  }, 500);
+
+  logMsg('✅ Патч 1v1: правило «выйди за дугу»');
+})();
 </script>
 </body>
 </html>
