@@ -2686,6 +2686,2760 @@ logMsg('✅ Готово! Играйте.');
 
   logMsg('✅ Патч 1v1: правило «выйди за дугу»');
 })();
+/* ============================================================
+   ЧАСТЬ 6: UI ПАНЕЛЬ + ПАС + ОТБОР + ДАВЛЕНИЕ
+   ============================================================ */
+
+// ===== ГЛАВНЫЙ UI =====
+ui = function(){
+  const tEl = document.getElementById('t');
+  const sEl = document.getElementById('s');
+  if(tEl) tEl.textContent = over ? '🏆 Конец' : ('Ход ' + teamName(turn));
+  if(sEl) sEl.textContent = sc[0] + ':' + sc[1];
+
+  const info = document.getElementById('figInfo');
+  const act = document.getElementById('act');
+  if(!act) return;
+  act.innerHTML = '';
+
+  if(over){
+    if(info) info.style.display = 'none';
+    const b = document.createElement('button');
+    b.textContent = '🔄 Заново';
+    b.onclick = () => location.reload();
+    act.appendChild(b);
+    return;
+  }
+
+  if(sel === null){
+    if(info) info.style.display = 'none';
+    addEndTurnBtn(act);
+    return;
+  }
+
+  const f = byId(sel);
+  if(!f) return;
+
+  // ===== ИНФО-ПАНЕЛЬ =====
+  let html = '<b>' + f.n + '</b> (' + f.p + ')<br>ОД: ' + f.o + '/' + f.mo +
+    '<br>Дри: ' + f.d + '  Брос: ' + f.b +
+    '<br>Защ: ' + f.z + '  Сила: ' + f.s;
+
+  if(f.ab && f.ab.length){
+    html += '<br><br>';
+    f.ab.forEach(a => {
+      html += '<span class="ab">' + a.n + '</span> — ' +
+        (a.p ? 'пассив' : a.c + ' ОД') + '<br>';
+    });
+  }
+
+  if(ball !== null && ball !== f.i){
+    const bh = byId(ball);
+    if(bh && bh.t !== f.t){
+      html += '<br><span style="color:#fbbf24">До мяча: ' +
+        dist(f.c, f.r, bh.c, bh.r) + '</span>';
+    }
+  }
+  if(f.fouls > 0){
+    html += '<br><span style="color:#f87171">Фолы: ' + f.fouls + '/5</span>';
+  }
+  if(f.penalty > 0){
+    html += '<br><span style="color:#f87171">🚫 Штрафной: ' + f.penalty + ' х.</span>';
+  }
+
+  if(info){
+    info.innerHTML = html;
+    info.style.display = 'block';
+  }
+
+  if(f.t !== turn || f.a){
+    addEndTurnBtn(act);
+    return;
+  }
+
+  // ===== РЕЖИМ ПАС =====
+  if(mode === 'pass'){
+    act.appendChild(mkBtn('← Отмена', () => {
+      mode='sel'; hl=[]; reHL(); ui(); draw();
+    }, 'cancel'));
+
+    const allies = fig.filter(g =>
+      g.t === f.t && g.i !== f.i && g.c >= 0 &&
+      dist(f.c, f.r, g.c, g.r) <= 3
+    );
+
+    allies.forEach(a => {
+      const b = document.createElement('button');
+      b.textContent = '→ ' + a.n;
+      b.style.background = '#3b82f6';
+      b.onclick = () => doPass(a.i);
+      act.appendChild(b);
+    });
+    addEndTurnBtn(act);
+    return;
+  }
+
+  // ===== РЕЖИМ ДАВЛЕНИЕ =====
+  if(mode === 'press'){
+    act.appendChild(mkBtn('← Отмена', () => {
+      mode='sel'; hl=[]; reHL(); ui(); draw();
+    }, 'cancel'));
+    addEndTurnBtn(act);
+    return;
+  }
+
+  // ===== ОСНОВНЫЕ ДЕЙСТВИЯ =====
+  const hasBall = ball === f.i;
+  const hoop = hoops[1 - f.t];
+  const dHoop = dist(f.c, f.r, hoop.c, hoop.r);
+
+  if(hasBall){
+    if(f.o >= 2){
+      act.appendChild(mkBtn('🎯 Бросок', doShoot));
+      if(dHoop <= 1) act.appendChild(mkBtn('💥 Данк', doDunk));
+      if(dHoop >= 1 && dHoop <= 2) act.appendChild(mkBtn('🏀 Флоатер', doFloater));
+      if(dHoop >= 5 && f.o >= 3) act.appendChild(mkBtn('🎯 Дальний трёх(3)', doDeepThree));
+    }
+
+    if(f.o >= 1){
+      act.appendChild(mkBtn('➡ Пас', () => {
+        mode = 'pass';
+        hl = fig.filter(g =>
+          g.t === f.t && g.i !== f.i && dist(f.c, f.r, g.c, g.r) <= 3
+        ).map(g => ({c:g.c, r:g.r, m:'pass', id:g.i}));
+        ui(); draw();
+      }, 'alt'));
+    }
+
+    if(!holds[f.i]){
+      act.appendChild(mkBtn('🤲 Держать', () => {
+        holds[f.i] = true;
+        logMsg(f.n + ' держит мяч');
+        ui(); draw();
+      }));
+    } else {
+      act.appendChild(mkBtn('✋ Отпустить', () => {
+        delete holds[f.i];
+        logMsg(f.n + ' отпустил');
+        ui(); draw();
+      }));
+    }
+  } else {
+    const bh = byId(ball);
+    if(bh && bh.t !== f.t && f.o >= 1 &&
+       dist(f.c, f.r, bh.c, bh.r) === 1){
+      act.appendChild(mkBtn('🤚 Отбор', doSteal, 'stl'));
+    }
+  }
+
+  // Давление
+  if(f.o >= 1){
+    act.appendChild(mkBtn('🛡 Давление(1)', () => {
+      mode = 'press';
+      hl = nb(f.c, f.r)
+        .filter(a => !figAt(a[0], a[1]) &&
+          !presses.some(p => p.c === a[0] && p.r === a[1])
+        )
+        .map(a => ({c:a[0], r:a[1], m:'web'}));
+      ui(); draw();
+    }));
+  }
+
+  // Способности
+  (f.ab || []).forEach(ab => {
+    if(ab.p) return;
+    const cd = (f.abilityCd && f.abilityCd[ab.n]) || 0;
+
+    if(cd > 0){
+      const b = mkBtn('⏳ ' + ab.n + ' (' + cd + ')', null, 'abi');
+      b.disabled = true;
+      b.style.opacity = '0.4';
+      act.appendChild(b);
+      return;
+    }
+    if(ab.u && f.us.indexOf(ab.n) >= 0){
+      const b = mkBtn('✔ ' + ab.n, null, 'abi');
+      b.disabled = true;
+      b.style.opacity = '0.4';
+      act.appendChild(b);
+      return;
+    }
+    if(f.o < ab.c) return;
+    act.appendChild(mkBtn('✨ ' + ab.n + '(' + ab.c + ')', () => startAb(ab), 'abi'));
+  });
+
+  act.appendChild(mkBtn('⏹ Завершить', end, 'alt'));
+  addEndTurnBtn(act);
+};
+
+// ===== УТИЛИТА КНОПКИ =====
+function mkBtn(txt, onclick, cls){
+  const b = document.createElement('button');
+  b.textContent = txt;
+  if(onclick) b.onclick = onclick;
+  if(cls) b.className = cls;
+  return b;
+}
+
+function addEndTurnBtn(act){
+  if(over) return;
+  const b = document.createElement('button');
+  b.textContent = '⏭ Конец хода';
+  b.className = 'end';
+  b.onclick = endTurn;
+  act.appendChild(b);
+}
+
+// ===== ОБРАБОТКА КЛИКА В РЕЖИМАХ =====
+handleModeClick = function(col, row){
+  if(mode === 'pass'){
+    const h = hl.find(hh => hh.c === col && hh.r === row);
+    if(h && h.id !== undefined) doPass(h.id);
+    else { mode='sel'; hl=[]; reHL(); ui(); draw(); }
+    return;
+  }
+  if(mode === 'press'){
+    if(hl.some(h => h.c === col && h.r === row)){
+      const f = byId(sel);
+      if(!f || f.o < 1) return;
+      f.o -= 1;
+      presses.push({c:col, r:row, team:f.t, owner:f.i});
+      logMsg('🛡 Давление: ' + f.n);
+      mode='sel'; hl=[];
+      if(f.o <= 0) end();
+      else { reHL(); ui(); draw(); }
+    } else {
+      mode='sel'; hl=[]; reHL(); ui(); draw();
+    }
+    return;
+  }
+};
+
+// ===== ПАС С ПЕРЕХВАТОМ =====
+doPass = function(targetId){
+  const f = byId(sel);
+  if(!f || ball !== f.i || f.o < 1) return;
+  const t = byId(targetId);
+  if(!t) return;
+
+  const hasCamou = (f.ab || []).some(a => a.tag === 'camouflage');
+
+  if(!hasCamou){
+    // Проверка перехвата
+    let int = null, br = 0;
+    fig.forEach(g => {
+      if(g.t === f.t || g.c < 0) return;
+      const minD = Math.min(
+        dist(g.c, g.r, f.c, f.r),
+        dist(g.c, g.r, t.c, t.r)
+      );
+      if(minD > 1) return;
+      const underwaterBonus = (g.ab || []).some(a => a.tag === 'underwater') ? 2 : 0;
+      const roll = g.z + underwaterBonus + Math.floor(Math.random()*6) + 1 + 2;
+      if(roll > br){ br = roll; int = g; }
+    });
+
+    if(int){
+      const pr = f.d + Math.floor(Math.random()*6) + 1;
+      logMsg('Перехват ' + int.n + ' ' + br + ' vs ' + pr);
+      if(br >= pr){
+        f.o -= 1;
+        ball = int.i;
+        delete holds[f.i];
+        logMsg('🚫 ПЕРЕХВАТ! ' + int.n);
+        mode='sel'; hl=[];
+        if(f.o <= 0) end();
+        else { reHL(); ui(); draw(); }
+        return;
+      }
+    }
+  }
+
+  const from = cen(f.c, f.r);
+  const to = cen(t.c, t.r);
+  ball = null;
+  f.o -= 1;
+
+  flyBall(from.x, from.y, to.x, to.y, () => {
+    ball = targetId;
+    logMsg('➡ Пас ' + f.n + ' → ' + t.n + (hasCamou ? ' (без перехвата)' : ''));
+    mode='sel'; hl=[];
+    if(f.o <= 0) end();
+    else { reHL(); ui(); draw(); }
+  });
+};
+
+// ===== ОТБОР =====
+doSteal = function(){
+  const f = byId(sel);
+  const bh = byId(ball);
+  if(!f || !bh || f.o < 1) return;
+  if(dist(f.c, f.r, bh.c, bh.r) !== 1) return;
+  f.o -= 1;
+
+  // Живучесть
+  if(bh.survive){
+    bh.survive = 0;
+    logMsg('🪳 ' + bh.n + ': живучесть!');
+    if(f.o <= 0) end();
+    else { reHL(); ui(); draw(); }
+    return;
+  }
+
+  let atkBonus = (f.bl > 0) ? -2 : 0;
+  let defBonus = (holds[bh.i] ? 2 : 0);
+  if(oppMarks[f.i] !== undefined) atkBonus -= 1;
+
+  const atk = f.z + atkBonus + Math.floor(Math.random()*6) + 1;
+  const def = bh.d + defBonus + Math.floor(Math.random()*6) + 1;
+  logMsg('🤚 Отбор ' + f.n + ' ' + atk + ' vs ' + bh.n + ' ' + def);
+
+  if(atk >= def){
+    ball = f.i;
+    delete holds[bh.i];
+    logMsg('✓ Мяч у ' + f.n);
+    popText('ОТБОР!', cen(f.c, f.r).x, cen(f.c, f.r).y - 25, '#22c55e', 18);
+    burst(cen(f.c, f.r).x, cen(f.c, f.r).y, '#fbbf24', 10, 2);
+
+    // Ожог
+    if(f.burnActive){
+      bh.o = Math.max(0, bh.o - 2);
+      logMsg('🔥 Ожог! -2 ОД');
+      f.burnActive = 0;
+    }
+    // Яд
+    if((f.ab || []).some(a => a.tag === 'poison')){
+      bh.o = Math.max(0, bh.o - 1);
+      logMsg('🦂 Яд! -1 ОД');
+    }
+  } else {
+    logMsg('✗ Не удалось');
+    if(atk <= def - 4){
+      f.fouls++;
+      logMsg('⚠ ФОЛ! ' + f.n + ' (' + f.fouls + '/5)');
+      popText('ФОЛ', cen(f.c, f.r).x, cen(f.c, f.r).y - 25, '#ef4444', 20);
+      if(f.fouls >= 5) sendToPenalty(f, 3);
+    }
+  }
+
+  if(f.o <= 0) end();
+  else { reHL(); ui(); draw(); }
+};
+
+// ===== ШТРАФНОЙ БОКС =====
+function sendToPenalty(f, rounds){
+  f.penalty = rounds || 3;
+  f.fouls = 0;
+  f.o = 0;
+  f.a = true;
+  const cells = PEN_CELLS[f.t];
+  for(const [c, r] of cells){
+    if(!fig.some(g => g !== f && g.c === c && g.r === r)){
+      f.c = c;
+      f.r = r;
+      f.px = undefined;
+      f.py = undefined;
+      logMsg('🚫 ' + f.n + ' ушёл в штрафной на ' + f.penalty + ' х.');
+      return;
+    }
+  }
+  f.c = -1;
+  f.r = -1;
+  logMsg('🚫 ' + f.n + ' вне поля');
+}
+/* ============================================================
+   ЧАСТЬ 7: БРОСКИ + БЛОК + ПОДБОР + СБРОС
+   ============================================================ */
+
+// ===== ОСНОВНОЙ БРОСОК =====
+doShoot = function(){
+  const f = byId(sel);
+  if(!f || ball !== f.i || f.o < 2) return;
+  const hoop = hoops[1 - f.t];
+  const d = dist(f.c, f.r, hoop.c, hoop.r);
+
+  // 1v1: правило "выйди за дугу"
+  if(gameMode === '1v1' && clearPending[f.t] && d < 4){
+    logMsg('⚠ Выйди за дугу!');
+    return;
+  }
+
+  const scPx = cen(f.c, f.r);
+  const hp = cen(hoop.c, hoop.r);
+  f.o -= 2;
+
+  // Блок
+  const blocker = checkBlock(f);
+  if(blocker){
+    popText('БЛОК!', scPx.x, scPx.y - 30, '#ef4444', 22);
+    logMsg('Бросок заблокирован ' + blocker.n);
+    delete holds[f.i];
+    ball = blocker.i;
+    setTimeout(() => end(), 400);
+    return;
+  }
+
+  // Тип броска и цель
+  let tgt, pt, sn;
+  if(d <= 1){ tgt = 5; pt = 2; sn = 'Лэй-ап'; }
+  else if(d <= 3){ tgt = 7; pt = 2; sn = 'Мид'; }
+  else { tgt = 9; pt = 3; sn = 'Трёха'; }
+
+  // Штрафы за давление
+  let pen = 0;
+  fig.forEach(o => {
+    if(o.t !== f.t && o.c >= 0 && dist(o.c, o.r, f.c, f.r) <= 1) pen = 2;
+  });
+
+  // Защита краски
+  const qb = fig.find(g => g.n === 'Королева пчёл' && g.t !== f.t && g.c >= 0);
+  if(qb){
+    const qh = hoops[1 - qb.t];
+    if(dist(f.c, f.r, qh.c, qh.r) <= 2){
+      pen += 1;
+      logMsg('👑 Защ.краски -1');
+    }
+  }
+
+  // Опека
+  if(oppMarks[f.i] !== undefined){ pen += 1; logMsg('🎯 Опека -1'); }
+
+  // Бонусы
+  let bonus = 0;
+  if((f.ab || []).some(a => a.n === 'Снайпер') && !f.mv){
+    bonus += 2;
+    logMsg('🎯 Снайпер +2');
+  }
+  if((f.ab || []).some(a => a.n === 'Дальнобой') && d >= 4) bonus += 1;
+  if(f.shootBonus) bonus += f.shootBonus;
+  if(f.bl > 0){ bonus -= 2; logMsg('✦ Ослеплён -2'); }
+
+  const roll = Math.floor(Math.random()*6) + 1;
+  const tot = f.b + bonus + roll;
+  const needed = tgt + pen;
+  const win = tot >= needed;
+  logMsg('🎯 ' + f.n + ': ' + sn + ' ' + tot + ' vs ' + needed);
+
+  ball = null;
+  flyBall(scPx.x, scPx.y, hp.x, hp.y, () => {
+    if(win){
+      popText('+' + pt, hp.x, hp.y - 22, '#22c55e', 26);
+      sc[f.t] += pt;
+      logMsg('✅ ПОПАЛ! +' + pt);
+      spawnParticles(hp.x, hp.y, 20, ['#fbbf24','#22c55e','#fff'], 3, 50);
+      setTimeout(() => {
+        if(sc[f.t] >= 21){
+          over = true;
+          logMsg('🏆 Победа!');
+          sel = null; hl = [];
+          ui(); draw();
+          return;
+        }
+        resetPositions(f.t);
+      }, 600);
+    } else {
+      popText('Мимо', hp.x, hp.y - 22, '#ef4444', 22);
+      logMsg('❌ Промах');
+      setTimeout(() => { rebound(f.t); end(); }, 400);
+    }
+  });
+  f.shootBonus = 0;
+};
+
+// ===== ДАНК =====
+doDunk = function(){
+  const f = byId(sel);
+  if(!f || ball !== f.i || f.o < 2) return;
+  const hoop = hoops[1 - f.t];
+  if(dist(f.c, f.r, hoop.c, hoop.r) > 1) return;
+  const scPx = cen(f.c, f.r);
+  const hp = cen(hoop.c, hoop.r);
+  f.o -= 2;
+
+  const blocker = checkBlock(f);
+  if(blocker){
+    popText('БЛОК!', scPx.x, scPx.y - 30, '#ef4444', 22);
+    logMsg('Данк заблокирован ' + blocker.n);
+    delete holds[f.i];
+    ball = blocker.i;
+    setTimeout(() => end(), 400);
+    return;
+  }
+
+  // Фол на данке
+  const defender = fig.find(g =>
+    g.t !== f.t && g.c >= 0 &&
+    dist(g.c, g.r, f.c, f.r) === 1
+  );
+
+  if(defender && Math.random() < 0.25){
+    defender.fouls++;
+    logMsg('⚠ ФОЛ на данке! ' + defender.n + ' (' + defender.fouls + '/5)');
+    popText('ФОЛ', hp.x, hp.y - 30, '#ef4444', 22);
+    if(defender.fouls >= 5) sendToPenalty(defender, 3);
+
+    ball = null;
+    flyBall(scPx.x, scPx.y, hp.x, hp.y, () => {
+      popText('+2!', hp.x, hp.y - 22, '#22c55e', 28);
+      sc[f.t] += 2;
+      spawnParticles(hp.x, hp.y, 30, ['#fbbf24','#22c55e','#fff'], 3.5, 55);
+      logMsg('💥 ДАНК + ФОЛ! +2 и штрафной');
+      setTimeout(() => {
+        shootFreeThrows(f.t, 1);
+        if(sc[f.t] >= 21){
+          over = true;
+          ui(); draw();
+          return;
+        }
+        resetPositions(f.t);
+      }, 800);
+    });
+    return;
+  }
+
+  let pen = 0;
+  fig.forEach(o => {
+    if(o.t !== f.t && o.c >= 0 && dist(o.c, o.r, f.c, f.r) <= 1) pen = 2;
+  });
+
+  const roll = Math.floor(Math.random()*6) + 1;
+  const tot = f.b + 3 + roll;
+  const needed = 5 + pen;
+  const win = tot >= needed;
+  logMsg('💥 ДАНК ' + tot + ' vs ' + needed);
+
+  ball = null;
+  flyBall(scPx.x, scPx.y, hp.x, hp.y, () => {
+    if(win){
+      popText('+2!', hp.x, hp.y - 22, '#22c55e', 28);
+      sc[f.t] += 2;
+      spawnParticles(hp.x, hp.y, 30, ['#fbbf24','#22c55e','#fff'], 3.5, 55);
+      setTimeout(() => {
+        if(sc[f.t] >= 21){ over = true; ui(); draw(); return; }
+        resetPositions(f.t);
+      }, 600);
+    } else {
+      popText('Блок', hp.x, hp.y - 22, '#ef4444', 24);
+      setTimeout(() => { rebound(f.t); end(); }, 400);
+    }
+  });
+  f.shootBonus = 0;
+};
+
+// ===== ФЛОАТЕР =====
+doFloater = function(){
+  const f = byId(sel);
+  if(!f || ball !== f.i || f.o < 2) return;
+  const hoop = hoops[1 - f.t];
+  const d = dist(f.c, f.r, hoop.c, hoop.r);
+  if(d < 1 || d > 2) return;
+  const scPx = cen(f.c, f.r);
+  const hp = cen(hoop.c, hoop.r);
+  f.o -= 2;
+
+  let bonus = 0;
+  if((f.ab || []).some(a => a.n === 'Снайпер') && !f.mv) bonus += 2;
+  if(f.shootBonus) bonus += f.shootBonus;
+
+  const roll = Math.floor(Math.random()*6) + 1;
+  const tot = f.b + bonus + roll - 1;
+  const needed = 6;
+  logMsg('🏀 Флоатер ' + tot + ' vs ' + needed);
+
+  ball = null;
+  flyBall(scPx.x, scPx.y, hp.x, hp.y, () => {
+    if(tot >= needed){
+      popText('+2!', hp.x, hp.y - 22, '#22c55e', 26);
+      sc[f.t] += 2;
+      setTimeout(() => {
+        if(sc[f.t] >= 21){ over = true; ui(); draw(); return; }
+        resetPositions(f.t);
+      }, 600);
+    } else {
+      popText('Мимо', hp.x, hp.y - 22, '#ef4444', 22);
+      setTimeout(() => { rebound(f.t); end(); }, 400);
+    }
+  });
+  f.shootBonus = 0;
+};
+
+// ===== ДАЛЬНИЙ ТРЁХ =====
+doDeepThree = function(){
+  const f = byId(sel);
+  if(!f || ball !== f.i || f.o < 3) return;
+  const hoop = hoops[1 - f.t];
+  const d = dist(f.c, f.r, hoop.c, hoop.r);
+  if(d < 5) return;
+  const scPx = cen(f.c, f.r);
+  const hp = cen(hoop.c, hoop.r);
+  f.o -= 3;
+
+  let bonus = 0;
+  if((f.ab || []).some(a => a.n === 'Дальнобой')) bonus += 1;
+  if((f.ab || []).some(a => a.n === 'Снайпер') && !f.mv) bonus += 2;
+  if(f.shootBonus) bonus += f.shootBonus;
+
+  const roll = Math.floor(Math.random()*6) + 1;
+  const tot = f.b + bonus + roll - 3;
+  const needed = 7;
+  logMsg('🎯 Дальний трёх ' + tot + ' vs ' + needed);
+
+  ball = null;
+  flyBall(scPx.x, scPx.y, hp.x, hp.y, () => {
+    if(tot >= needed){
+      popText('+3!', hp.x, hp.y - 22, '#22c55e', 28);
+      sc[f.t] += 3;
+      setTimeout(() => {
+        if(sc[f.t] >= 21){ over = true; ui(); draw(); return; }
+        resetPositions(f.t);
+      }, 600);
+    } else {
+      popText('Мимо', hp.x, hp.y - 22, '#ef4444', 22);
+      setTimeout(() => { rebound(f.t); end(); }, 400);
+    }
+  });
+  f.shootBonus = 0;
+};
+
+// ===== БЛОК =====
+checkBlock = function(shooter){
+  const blockers = fig.filter(g =>
+    g.t !== shooter.t && g.c >= 0 &&
+    dist(g.c, g.r, shooter.c, shooter.r) <= 1
+  );
+
+  for(let i = 0; i < blockers.length; i++){
+    const b = blockers[i];
+    if(b.o < 1) continue;
+    let bonus = (b.ab && b.ab.some(a => a.n === 'Стоппер')) ? 1 : 0;
+    const atk = b.s + bonus + Math.floor(Math.random()*6) + 1;
+    const def = shooter.s + Math.floor(Math.random()*6) + 1;
+    logMsg('🛡 Блок ' + b.n + ' ' + atk + ' vs ' + shooter.n + ' ' + def);
+    if(atk >= def){
+      b.o = Math.max(0, b.o - 1);
+      return b;
+    }
+  }
+  return null;
+};
+
+// ===== ПОДБОР =====
+rebound = function(team){
+  // Королевский подбор
+  const king = fig.find(g => g.t === (1 - team) && g.reboundKing);
+  if(king){
+    king.reboundKing = 0;
+    ball = king.i;
+    logMsg('👑 ' + king.n + ': королевский подбор!');
+    return;
+  }
+
+  const hoop = hoops[1 - team];
+  let best = null, bd = 99;
+  fig.forEach(f => {
+    if(f.c < 0 || f.penalty > 0) return;
+    const d = dist(f.c, f.r, hoop.c, hoop.r);
+    if(d < bd){ bd = d; best = f; }
+  });
+  if(best){
+    ball = best.i;
+    logMsg('🔄 Подбор: ' + best.n);
+  }
+};
+
+// ===== ШТРАФНЫЕ =====
+shootFreeThrows = function(team, count){
+  const hoop = hoops[1 - team];
+  const shooter =
+    fig.find(f => f.t === team && f.c >= 0 && f.b >= 4) ||
+    fig.find(f => f.t === team && f.c >= 0);
+
+  if(!shooter){ logMsg('Некому бросать'); return; }
+  logMsg('🎯 Штрафные: ' + shooter.n + ' x' + count);
+
+  let made = 0, att = 0;
+  function next(){
+    if(att >= count){
+      logMsg('Штрафные: ' + made + '/' + count);
+      return;
+    }
+    att++;
+    const roll = Math.floor(Math.random()*6) + 1;
+    const tot = shooter.b + roll;
+    logMsg('Штрафной ' + att + ': ' + tot + ' vs 6');
+    const hp = cen(hoop.c, hoop.r);
+
+    if(tot >= 6){
+      sc[team] += 1;
+      made++;
+      logMsg('✓ +1');
+      popText('+1', hp.x, hp.y - 22, '#22c55e', 22);
+    } else {
+      logMsg('✗ Промах');
+      popText('Мимо', hp.x, hp.y - 22, '#ef4444', 18);
+    }
+    setTimeout(next, 600);
+  }
+  setTimeout(next, 400);
+};
+
+// ===== СБРОС ПОСЛЕ ГОЛА =====
+resetPositions = function(scoringTeam){
+  // 1v1 — особый сброс
+  if(gameMode === '1v1'){
+    const scorer = fig.find(f => f.t === scoringTeam && f.c >= 0);
+    const opp = fig.find(f => f.t === (1 - scoringTeam) && f.c >= 0);
+
+    if(scorer){
+      scorer.c = 4; scorer.r = 10;
+      scorer.a = false; scorer.o = scorer.mo;
+      scorer.fr = 0; scorer.bl = 0; scorer.mv = false;
+      scorer.px = undefined; scorer.py = undefined;
+      scorer.shootBonus = 0;
+    }
+    if(opp){
+      opp.c = 4; opp.r = 7;
+      opp.a = false; opp.o = opp.mo;
+      opp.fr = 0; opp.bl = 0; opp.mv = false;
+      opp.px = undefined; opp.py = undefined;
+      opp.shootBonus = 0;
+      ball = opp.i;
+    }
+
+    clearPending[0] = false;
+    clearPending[1] = false;
+    webs = []; presses = []; holds = {}; oppMarks = {};
+    turn = 1 - scoringTeam;
+    sel = null; hl = []; mode = 'sel'; pab = null;
+    logMsg('🔄 Сброс 1v1. Мяч у ' + (opp ? opp.n : '?'));
+    ui(); draw();
+    if(aiEnabled && turn === 1 && !over) setTimeout(playAllAI, 800);
+    return;
+  }
+
+  // 5v5 / 3v3
+  fig.forEach((f, i) => {
+    // ВАЖНО: игроков в штрафном не возвращаем
+    if(f.penalty > 0){
+      f.a = true;
+      f.o = 0;
+      return;
+    }
+
+    const preset = MODE_PRESETS[gameMode] || MODE_PRESETS['5v5'];
+    const idx = f.t === 0 ? i : (i - preset.count);
+    const pos = (f.t === 0 ? pA : pB)[idx];
+    if(pos){ f.c = pos[0]; f.r = pos[1]; }
+
+    f.a = false;
+    f.o = f.mo;
+    f.fr = 0;
+    f.bl = 0;
+    f.us = [];
+    f.mv = false;
+    f.px = undefined;
+    f.py = undefined;
+    f._animating = false;
+    f.shootBonus = 0;
+
+    if(f.dribbleCd){
+      Object.keys(f.dribbleCd).forEach(k => f.dribbleCd[k] = 0);
+    }
+    if(f.teamCd){
+      Object.keys(f.teamCd).forEach(k => f.teamCd[k] = 0);
+    }
+  });
+
+  const opp = 1 - scoringTeam;
+  const pg = fig.find(f => f.t === opp && f.c >= 0 && f.penalty === 0);
+  ball = pg ? pg.i : null;
+  webs = []; presses = []; holds = {}; oppMarks = {};
+  turn = opp;
+  sel = null; hl = []; mode = 'sel'; pab = null;
+  clearPending[0] = false;
+  clearPending[1] = false;
+
+  logMsg('🔄 Сброс. Мяч у ' + (pg ? pg.n : '?'));
+  ui(); draw();
+  if(aiEnabled && turn === 1 && !over) setTimeout(playAllAI, 800);
+};
+/* ============================================================
+   ЧАСТЬ 8: СПОСОБНОСТИ
+   ============================================================ */
+
+// Хелперы
+function hasAb(f, name){ return (f.ab || []).some(a => a.n === name); }
+function hasTag(f, tag){ return (f.ab || []).some(a => a.tag === tag); }
+function enemyIn(f, r){
+  return fig.filter(g =>
+    g.t !== f.t && g.c >= 0 && dist(g.c, g.r, f.c, f.r) <= r
+  );
+}
+
+// ===== ЗАПУСК СПОСОБНОСТИ =====
+startAb = function(ab){
+  const f = byId(sel);
+  if(!f || f.o < ab.c) return;
+
+  // Проверка кулдауна
+  const cd = (f.abilityCd && f.abilityCd[ab.n]) || 0;
+  if(cd > 0){ logMsg('⏳ ' + ab.n + ': кулдаун ' + cd); return; }
+  if(ab.u && f.us.indexOf(ab.n) >= 0){
+    logMsg('⏳ ' + ab.n + ' уже использована');
+    return;
+  }
+
+  // ===== САМОБАФФЫ (без цели) =====
+
+  if(ab.m === 'luck'){
+    f.o -= ab.c; f.us.push(ab.n); f.abilityCd[ab.n] = 99;
+    f.luckActive = 1;
+    logMsg('🍀 Удача! Следующий бросок перебрасывается');
+    if(f.o <= 0) end(); else { ui(); draw(); }
+    return;
+  }
+
+  if(ab.m === 'quickstep'){
+    f.o -= ab.c; f.quickStep = 2;
+    logMsg('🪰 Быстрый шаг! +2 гекса на движение');
+    if(f.o <= 0) end(); else { ui(); draw(); }
+    return;
+  }
+
+  if(ab.m === 'survive'){
+    f.o -= ab.c; f.survive = 1;
+    logMsg('🪳 Живучесть! Следующая потеря мяча отменена');
+    if(f.o <= 0) end(); else { ui(); draw(); }
+    return;
+  }
+
+  if(ab.m === 'no_pressure'){
+    f.o -= ab.c; f.noPressure = 1;
+    logMsg('🐝 Жало! Не получаю штраф за давление');
+    if(f.o <= 0) end(); else { ui(); draw(); }
+    return;
+  }
+
+  if(ab.m === 'shoot_bonus3'){
+    f.o -= ab.c;
+    f.shootBonus = (f.shootBonus || 0) + 3;
+    logMsg('💚 Точный! +3 к броску');
+    popText('+3', cen(f.c, f.r).x, cen(f.c, f.r).y - 30, '#22c55e', 20);
+    if(f.o <= 0) end(); else { ui(); draw(); }
+    return;
+  }
+
+  if(ab.m === 'shadow'){
+    f.o -= ab.c;
+    f.shootBonus = (f.shootBonus || 0) + 3;
+    f.z = Math.max(0, f.z - 1);
+    f.shadowDebuff = 1;
+    logMsg('🦋 Тень! +3 бросок, -1 защита');
+    if(f.o <= 0) end(); else { ui(); draw(); }
+    return;
+  }
+
+  if(ab.m === 'camouflage'){
+    f.o -= ab.c; f.camouflage = 1;
+    logMsg('🌿 Маскировка! Пас без перехвата');
+    if(f.o <= 0) end(); else { ui(); draw(); }
+    return;
+  }
+
+  if(ab.m === 'tyrant'){
+    f.o -= ab.c;
+    f.z += 2; f.s += 2; f.tyrantBuff = 1;
+    logMsg('👑 Тиран! +2 Защ +2 Сила');
+    if(f.o <= 0) end(); else { ui(); draw(); }
+    return;
+  }
+
+  if(ab.m === 'burn'){
+    f.o -= ab.c; f.burnActive = 1;
+    logMsg('🔥 Ожог! След. отбор -2 ОД врагу');
+    if(f.o <= 0) end(); else { ui(); draw(); }
+    return;
+  }
+
+  if(ab.m === 'rebound_king'){
+    f.o -= ab.c; f.reboundKing = 1;
+    logMsg('👑 Подбор! След. отскок мой');
+    if(f.o <= 0) end(); else { ui(); draw(); }
+    return;
+  }
+
+  if(ab.m === 'regen'){
+    f.o -= ab.c; f.regenBonus = 2;
+    logMsg('🪱 Регенерация! +2 ОД след. ход');
+    if(f.o <= 0) end(); else { ui(); draw(); }
+    return;
+  }
+
+  if(ab.m === 'shield'){
+    f.o -= ab.c;
+    f.z += 3; f.shieldBuff = 1;
+    logMsg('🪲 Щит! +3 Защ');
+    if(f.o <= 0) end(); else { ui(); draw(); }
+    return;
+  }
+
+  if(ab.m === 'zone'){
+    f.o -= ab.c;
+    f.us.push(ab.n);
+    f.abilityCd[ab.n] = 99;
+    f.mo += 1; f.o += 1;
+    f.d += 1; f.b += 1; f.z += 1; f.s += 1;
+    f.zoneBuff = 3;
+    logMsg('🪳 Зона! +1 ко всем статам на 3 хода');
+    popText('ZONE!', cen(f.c, f.r).x, cen(f.c, f.r).y - 34, '#fbbf24', 20);
+    if(f.o <= 0) end(); else { ui(); draw(); }
+    return;
+  }
+
+  if(ab.m === 'team_od'){
+    f.o -= ab.c;
+    let cnt = 0;
+    fig.forEach(g => {
+      if(g.t === f.t && g.i !== f.i && g.c >= 0 &&
+         dist(f.c, f.r, g.c, g.r) <= 3 && !g.a){
+        g.o = Math.min(g.mo + 1, g.o + 1);
+        cnt++;
+      }
+    });
+    logMsg('🐜 Дух команды! +1 ОД ' + cnt + ' союзникам');
+    burst(cen(f.c, f.r).x, cen(f.c, f.r).y, '#22c55e', 15, 3);
+    if(f.o <= 0) end(); else { ui(); draw(); }
+    return;
+  }
+
+  // ===== АТАКА/ОТБОР ВРАГА =====
+  if(ab.m === 'hardsteal' || ab.m === 'clutch'){
+    const bh = byId(ball);
+    if(!bh || bh.t === f.t){ logMsg('Нет мяча у врага'); return; }
+    if(dist(f.c, f.r, bh.c, bh.r) > 1){ logMsg('Слишком далеко'); return; }
+
+    f.o -= ab.c;
+    const atk = f.z + 2 + Math.floor(Math.random()*6) + 1;
+    const def = bh.d + Math.floor(Math.random()*6) + 1;
+    logMsg((ab.m === 'hardsteal' ? '🛡 Жёсткий отбор ' : '🕷 Хватка ') + atk + ' vs ' + def);
+
+    if(atk >= def){
+      ball = f.i;
+      bh.fr = 1;
+      logMsg('✓ Мяч у ' + f.n);
+      burst(cen(bh.c, bh.r).x, cen(bh.c, bh.r).y, '#ef4444', 20, 3);
+    } else {
+      logMsg('✗ Провал');
+      if(atk <= def - 4){
+        f.fouls++;
+        logMsg('⚠ ФОЛ ' + f.fouls + '/5');
+        if(f.fouls >= 5) sendToPenalty(f, 3);
+      }
+    }
+    if(f.o <= 0) end(); else { ui(); draw(); }
+    return;
+  }
+
+  // ===== ЦЕЛЕВЫЕ СПОСОБНОСТИ =====
+  pab = ab;
+  mode = 'ability';
+  hl = [];
+
+  // Движения
+  if(ab.m === 'jump' || ab.m === 'phase' || ab.m === 'dash' ||
+     ab.m === 'meteor' || ab.m === 'roll' ||
+     ab.m === 'slide' || ab.m === 'flutter'){
+    const rg = ab.m === 'jump' ? 3
+             : ab.m === 'phase' ? 2
+             : ab.m === 'slide' ? 3
+             : ab.m === 'flutter' ? 2
+             : 2;
+
+    for(let r = 0; r < ROWS; r++){
+      for(let c = 0; c < COLS; c++){
+        if(c === f.c && r === f.r) continue;
+        if(figAt(c, r)) continue;
+        const d = dist(f.c, f.r, c, r);
+        if(d >= 1 && d <= rg){
+          if(ab.m === 'meteor'){
+            const dh = dist(c, r, hoops[1 - f.t].c, hoops[1 - f.t].r);
+            if(dh <= 3) hl.push({c, r, m:'meteor'});
+          } else if(ab.m === 'roll'){
+            hl.push({c, r, m:'roll'});
+          } else {
+            hl.push({c, r, m:ab.m});
+          }
+        }
+      }
+    }
+  }
+  // Сеть
+  else if(ab.m === 'web'){
+    for(let r = 0; r < ROWS; r++){
+      for(let c = 0; c < COLS; c++){
+        const d = dist(f.c, f.r, c, r);
+        if(d >= 1 && d <= 2 && !figAt(c, r) &&
+           !webs.some(w => w.c === c && w.r === r)){
+          hl.push({c, r, m:'web'});
+        }
+      }
+    }
+  }
+  // Точный пас
+  else if(ab.m === 'royal_pass'){
+    fig.filter(g =>
+      g.t === f.t && g.i !== f.i && g.c >= 0 &&
+      dist(f.c, f.r, g.c, g.r) <= 5
+    ).forEach(g => hl.push({c:g.c, r:g.r, m:'ally_tgt', id:g.i}));
+  }
+  // Королевский захват
+  else if(ab.m === 'royal_reb'){
+    const bh = byId(ball);
+    if(bh && bh.t !== f.t && dist(f.c, f.r, bh.c, bh.r) <= 2){
+      hl.push({c:bh.c, r:bh.r, m:'royal_reb_tgt', id:bh.i});
+    }
+  }
+  // Враги
+  else if(['push','blind','freeze','sting','pollen','powder'].includes(ab.m)){
+    const rg = (ab.m === 'pollen' || ab.m === 'powder') ? 2 : 1;
+    enemyIn(f, rg).forEach(g =>
+      hl.push({c:g.c, r:g.r, m:'enemy', id:g.i})
+    );
+  }
+
+  if(!hl.length){
+    logMsg('Нет подходящей цели для ' + ab.n);
+    mode='sel'; pab=null; ui(); draw();
+    return;
+  }
+  ui(); draw();
+};
+
+// ===== ВЫПОЛНЕНИЕ СПОСОБНОСТИ =====
+execAb = function(t){
+  const f = byId(sel);
+  if(!f || !pab) return;
+  const ab = pab;
+
+  function setCd(m){
+    if(!f.abilityCd) f.abilityCd = {};
+    const cd = ABILITY_CD[m] || 2;
+    f.abilityCd[ab.n] = cd;
+    logMsg('⏳ ' + ab.n + ': кулдаун ' + cd);
+  }
+
+  // ===== ДВИЖЕНИЯ =====
+  if(['jump','phase','dash','slide','flutter'].includes(ab.m)){
+    const fromPx = cen(f.c, f.r);
+    const color = ab.m === 'jump' ? 'rgba(74,222,128,0.7)'
+                : ab.m === 'phase' ? 'rgba(139,92,246,0.8)'
+                : ab.m === 'dash' ? 'rgba(6,182,212,0.7)'
+                : ab.m === 'slide' ? 'rgba(6,182,212,0.8)'
+                : 'rgba(255,182,193,0.8)';
+
+    ghostTrail(f, f.c, f.r, t.c, t.r, color, 9);
+    f.c = t.c; f.r = t.r;
+    f.px = undefined; f.py = undefined;
+    f.o -= ab.c;
+    f.mv = true;
+    setCd(ab.m);
+    logMsg('✨ ' + f.n + ': ' + ab.n);
+    popText('⚡', fromPx.x, fromPx.y - 30, '#a855f7', 22);
+    burst(cen(t.c, t.r).x, cen(t.c, t.r).y, '#a855f7', 12, 2.5);
+  }
+  // ===== МЕТЕОР =====
+  else if(ab.m === 'meteor' && t.m === 'meteor'){
+    const fromPx = cen(f.c, f.r);
+    ghostTrail(f, f.c, f.r, t.c, t.r, 'rgba(239,68,68,0.8)', 10);
+    f.c = t.c; f.r = t.r;
+    f.px = undefined; f.py = undefined;
+    f.shootBonus = (f.shootBonus || 0) + 2;
+    f.o -= ab.c;
+    f.mv = true;
+    setCd('meteor');
+    logMsg('☄️ Метеор-джем! +2 к броску');
+    popText('☄️ МЕТЕОР', fromPx.x, fromPx.y - 30, '#ef4444', 22);
+  }
+  // ===== КАТАНИЕ =====
+  else if(ab.m === 'roll' && t.m === 'roll'){
+    ghostTrail(f, f.c, f.r, t.c, t.r, 'rgba(251,191,36,0.8)', 12);
+    const steps = dist(f.c, f.r, t.c, t.r);
+    const fa = toAx(f.c, f.r), ta = toAx(t.c, t.r);
+
+    for(let i = 1; i <= steps; i++){
+      const off = toOff(
+        Math.round(fa.q + (ta.q - fa.q) * i / steps),
+        Math.round(fa.r + (ta.r - fa.r) * i / steps)
+      );
+      const victim = figAt(off.c, off.r);
+      if(victim && victim.i !== f.i){
+        const opts = nb(victim.c, victim.r).filter(pp => !figAt(pp[0], pp[1]));
+        if(opts.length){
+          victim.c = opts[0][0];
+          victim.r = opts[0][1];
+          victim.px = undefined;
+          victim.py = undefined;
+          logMsg('🪲 Отброшен ' + victim.n);
+        }
+      }
+    }
+
+    f.c = t.c; f.r = t.r;
+    f.px = undefined; f.py = undefined;
+    f.o -= ab.c;
+    f.mv = true;
+    setCd('roll');
+    logMsg('🪲 Катание!');
+    burst(cen(t.c, t.r).x, cen(t.c, t.r).y, '#fbbf24', 15, 3);
+  }
+  // ===== СЕТЬ =====
+  else if(ab.m === 'web'){
+    webs.push({c:t.c, r:t.r});
+    f.o -= ab.c;
+    setCd('web');
+    logMsg('🕸 Сеть на гексе');
+    const toPx = cen(t.c, t.r);
+    for(let i = 0; i < 3; i++){
+      fx.push({
+        type:'wave', x:toPx.x, y:toPx.y, r:0,
+        maxR:S*(1.2 + i*0.5),
+        color:'rgba(124,58,237,0.7)',
+        life:25 + i*5, maxLife:25 + i*5
+      });
+    }
+    if(!animating){ animating = true; requestAnimationFrame(tick); }
+  }
+  // ===== ТОЧНЫЙ ПАС =====
+  else if(ab.m === 'royal_pass' && t.m === 'ally_tgt'){
+    const target = byId(t.id);
+    if(target){
+      ball = target.i;
+      delete holds[f.i];
+      f.o -= ab.c;
+      setCd('royal_pass');
+      logMsg('👑 Точный пас → ' + target.n);
+      popText('👑', cen(target.c, target.r).x,
+        cen(target.c, target.r).y - 30, '#fbbf24', 22);
+    }
+  }
+  // ===== КОРОЛЕВСКИЙ ЗАХВАТ =====
+  else if(ab.m === 'royal_reb' && t.m === 'royal_reb_tgt'){
+    const bh = byId(t.id);
+    if(bh){
+      ball = f.i;
+      delete holds[bh.i];
+      f.o -= ab.c;
+      setCd('royal_reb');
+      logMsg('👑 Королевский захват! Мяч у ' + f.n);
+      popText('👑 ЗАХВАТ', cen(bh.c, bh.r).x,
+        cen(bh.c, bh.r).y - 34, '#fbbf24', 20);
+      burst(cen(bh.c, bh.r).x, cen(bh.c, bh.r).y, '#fbbf24', 18, 3);
+    }
+  }
+  // ===== ТОЛЧОК =====
+  else if(ab.m === 'push' && t.m === 'enemy'){
+    const e = byId(t.id);
+    if(e){
+      const a = toAx(f.c, f.r), b = toAx(e.c, e.r);
+      const dq = Math.sign(b.q - a.q) || (Math.random() < 0.5 ? 1 : -1);
+      const dr = Math.sign(b.r - a.r) || (Math.random() < 0.5 ? 1 : -1);
+      const tp = toOff(b.q + dq, b.r + dr);
+      const r1 = f.s + Math.floor(Math.random()*6) + 1;
+      const r2 = e.s + Math.floor(Math.random()*6) + 1;
+
+      f.o -= ab.c;
+      setCd('push');
+      logMsg('💪 Толчок ' + r1 + ' vs ' + r2);
+      popText('💪', cen(f.c, f.r).x, cen(f.c, f.r).y - 30, '#f59e0b', 28);
+
+      if(tp.c < 0 || tp.c >= COLS || tp.r < 0 || tp.r >= ROWS || figAt(tp.c, tp.r)){
+        logMsg('Нет места');
+      } else if(r1 > r2){
+        e.c = tp.c; e.r = tp.r;
+        e.px = undefined; e.py = undefined;
+        logMsg('✓ Отброшен');
+        burst(cen(tp.c, tp.r).x, cen(tp.c, tp.r).y, '#f59e0b', 14, 3);
+      } else {
+        logMsg('✗ Не вышло');
+      }
+    }
+  }
+  // ===== ОСЛЕПЛЕНИЕ =====
+  else if(ab.m === 'blind' && t.m === 'enemy'){
+    const e = byId(t.id);
+    if(e){
+      e.bl = 1;
+      f.o -= ab.c;
+      setCd('blind');
+      logMsg('✨ ' + f.n + ' ослепил ' + e.n);
+      const ePx = cen(e.c, e.r);
+      popText('✨', ePx.x, ePx.y - 32, '#fbbf24', 32);
+      burst(ePx.x, ePx.y, '#fbbf24', 22, 3.5);
+    }
+  }
+  // ===== ЗАХВАТ =====
+  else if(ab.m === 'freeze' && t.m === 'enemy'){
+    const e = byId(t.id);
+    if(e){
+      e.fr = 1;
+      f.o -= ab.c;
+      setCd('freeze');
+      logMsg('❄ ' + f.n + ' захватил ' + e.n);
+      popText('❄', cen(e.c, e.r).x, cen(e.c, e.r).y - 32, '#0ea5e9', 32);
+    }
+  }
+  // ===== ЖАЛО =====
+  else if(ab.m === 'sting' && t.m === 'enemy'){
+    const e = byId(t.id);
+    if(e){
+      e.o = Math.max(0, e.o - 2);
+      f.o -= ab.c;
+      setCd('sting');
+      logMsg('🦂 ' + f.n + ': ' + e.n + ' -2 ОД');
+      popText('🦂 -2 ОД', cen(e.c, e.r).x, cen(e.c, e.r).y - 32, '#a855f7', 24);
+      burst(cen(e.c, e.r).x, cen(e.c, e.r).y, '#a855f7', 18, 3);
+    }
+  }
+  // ===== ПЫЛЬЦА =====
+  else if(ab.m === 'pollen' && t.m === 'enemy'){
+    const e = byId(t.id);
+    if(e){
+      e.z = Math.max(0, e.z - 1);
+      e.defDebuff = 2;
+      f.o -= ab.c;
+      setCd('pollen');
+      logMsg('🦋 Пыльца! ' + e.n + ' -1 Защ');
+      popText('🦋 -1 Защ', cen(e.c, e.r).x, cen(e.c, e.r).y - 32, '#c084fc', 20);
+    }
+  }
+  // ===== ПОРОШОК =====
+  else if(ab.m === 'powder' && t.m === 'enemy'){
+    const e = byId(t.id);
+    if(e){
+      e.bl = 1;
+      f.o -= ab.c;
+      setCd('powder');
+      logMsg('🦋 Порошок! ' + e.n + ' ослеплён');
+      popText('🦋 ✦', cen(e.c, e.r).x, cen(e.c, e.r).y - 32, '#c084fc', 20);
+    }
+  }
+
+  pab = null;
+  mode = 'sel';
+  hl = [];
+  if(f.o <= 0) end();
+  else { reHL(); ui(); draw(); }
+};
+
+// ===== ПАССИВ: ТЕНЁТА (Паук) =====
+const _doShootP = doShoot;
+doShoot = function(){
+  const f = byId(sel);
+  if(f){
+    const enemies = fig.filter(g =>
+      g.t !== f.t && g.c >= 0 && dist(g.c, g.r, f.c, f.r) <= 1
+    );
+    let pen = 0;
+    enemies.forEach(e => { if(hasTag(e, 'web_trap')) pen += 1; });
+    if(pen){
+      enemies.forEach(e => { if(hasTag(e, 'web_trap')) e.z -= 1; });
+      const r = _doShootP();
+      setTimeout(() => {
+        enemies.forEach(e => { if(hasTag(e, 'web_trap')) e.z += 1; });
+      }, 300);
+      return r;
+    }
+  }
+  return _doShootP();
+};
+
+// ===== ПАССИВ: ЭНЕРГИЯ (Огн.муравей) =====
+setInterval(function(){
+  if(!fig || !fig.length || over) return;
+  fig.forEach(f => {
+    if(hasTag(f, 'fire_energy')){
+      const my = f.t === 0 ? sc[0] : sc[1];
+      const op = f.t === 0 ? sc[1] : sc[0];
+      if(my < op && !f._energyBonus){
+        f.o += 1;
+        f._energyBonus = true;
+        logMsg('🔥 ' + f.n + ': Энергия! +1 ОД');
+      }
+      if(my >= op) f._energyBonus = false;
+    }
+  });
+}, 2000);
+
+// ===== ПАССИВ: ЯД (Скорпион) — при отборе =====
+const _doStealP = doSteal;
+doSteal = function(){
+  const f = byId(sel);
+  const bh = byId(ball);
+  const before = ball;
+  const r = _doStealP();
+  if(f && ball === f.i && ball !== before){
+    if(hasTag(f, 'poison')){
+      bh.o = Math.max(0, bh.o - 1);
+      logMsg('🦂 Яд! -1 ОД');
+    }
+  }
+  return r;
+};
+
+// ===== ПАССИВ: МАСКИРОВКА — перехват doPass =====
+const _doPassP = doPass;
+doPass = function(targetId){
+  const f = byId(sel);
+  if(f && (hasTag(f, 'camouflage') || f.camouflage)){
+    f.camouflage = 0;
+    const t = byId(targetId);
+    if(t){
+      const from = cen(f.c, f.r), to = cen(t.c, t.r);
+      ball = null;
+      f.o -= 1;
+      flyBall(from.x, from.y, to.x, to.y, () => {
+        ball = targetId;
+        logMsg('🌿 Пас ' + f.n + ' → ' + t.n + ' (без перехвата)');
+        mode='sel'; hl=[];
+        if(f.o <= 0) end();
+        else { reHL(); ui(); draw(); }
+      });
+      return;
+    }
+  }
+  return _doPassP(targetId);
+};
+
+// ===== ПОДБОР (Королевский) — перехват =====
+const _reboundP = rebound;
+rebound = function(team){
+  const king = fig.find(g => g.t === (1 - team) && g.reboundKing);
+  if(king){
+    king.reboundKing = 0;
+    ball = king.i;
+    logMsg('👑 ' + king.n + ': королевский подбор!');
+    return;
+  }
+  return _reboundP(team);
+};
+
+// ===== ОБРАБОТКА КЛИКА В РЕЖИМЕ ABILITY =====
+const _hmcP = handleModeClick;
+handleModeClick = function(col, row){
+  if(mode === 'ability'){
+    const t = hl.find(h => h.c === col && h.r === row);
+    if(t) execAb(t);
+    else { mode='sel'; pab=null; hl=[]; reHL(); ui(); draw(); }
+    return;
+  }
+  return _hmcP(col, row);
+};
+/* ============================================================
+   ЧАСТЬ 9: ДРИБЛИНГ + КОМАНДНЫЕ СПОСОБНОСТИ
+   ============================================================ */
+
+let dribbleType = '';
+
+// ===== ПОСТРОЕНИЕ ЦЕЛЕЙ ДЛЯ ДРИБЛИНГА =====
+function buildDribbleTargets(maxDist){
+  const f = byId(sel);
+  const targets = [];
+  if(!f) return targets;
+  const myAx = toAx(f.c, f.r);
+  const dirs = [[1,0],[-1,0],[0,1],[0,-1],[1,-1],[-1,1]];
+
+  dirs.forEach(d => {
+    const midOff = toOff(myAx.q + d[0], myAx.r + d[1]);
+    if(midOff.c < 0 || midOff.c >= COLS ||
+       midOff.r < 0 || midOff.r >= ROWS) return;
+
+    const def = figAt(midOff.c, midOff.r);
+    if(!def || def.t === f.t) return;
+
+    for(let i = 1; i <= maxDist; i++){
+      const tOff = toOff(
+        myAx.q + d[0]*(1+i),
+        myAx.r + d[1]*(1+i)
+      );
+      if(tOff.c < 0 || tOff.c >= COLS ||
+         tOff.r < 0 || tOff.r >= ROWS) break;
+      if(figAt(tOff.c, tOff.r)) break;
+
+      targets.push({
+        c: tOff.c, r: tOff.r,
+        m: 'dribble', defId: def.i
+      });
+    }
+  });
+  return targets;
+}
+
+// ===== ВЫБОР ПРИЁМА ДРИБЛИНГА =====
+pickDribble = function(dr){
+  const f = byId(sel);
+  if(!f || ball !== f.i) return;
+  if(f.o < dr.c){ logMsg('Мало ОД'); return; }
+
+  if(!f.dribbleCd) f.dribbleCd = {};
+  if(f.dribbleCd[dr.m] > 0){
+    logMsg('⏳ ' + dr.n + ' на кулдауне ' + f.dribbleCd[dr.m]);
+    return;
+  }
+  if(f.d < dr.req){
+    logMsg('⚠ ' + dr.n + ' требует Дри ' + dr.req);
+    return;
+  }
+
+  if(dr.needDef){
+    const defs = fig.filter(g =>
+      g.t !== f.t && g.c >= 0 &&
+      dist(g.c, g.r, f.c, f.r) === 1
+    );
+    if(!defs.length){ logMsg('Нет защитника рядом'); return; }
+  }
+
+  // Движения
+  if(dr.move){
+    dribbleType = dr.m;
+    mode = 'dribbleTarget';
+    hl = buildDribbleTargets(dr.dist);
+    if(!hl.length){
+      logMsg('Негде пройти');
+      mode='sel'; hl=[];
+      ui(); draw();
+      return;
+    }
+    ui(); draw();
+    return;
+  }
+
+  // Эффекты без движения
+  f.o -= dr.c;
+
+  if(dr.m === 'between'){
+    f.shootBonus = (f.shootBonus || 0) + 2;
+    logMsg('🏀 Между ног: +2 к броску');
+    popText('+2', cen(f.c, f.r).x, cen(f.c, f.r).y - 25, '#22c55e', 16);
+  } else if(dr.m === 'stepback'){
+    const back = f.t === 0 ? {dc:0, dr:1} : {dc:0, dr:-1};
+    const tc = f.c + back.dc, tr = f.r + back.dr;
+    if(tc < 0 || tc >= COLS || tr < 0 || tr >= ROWS || figAt(tc, tr)){
+      logMsg('Негде отойти');
+      f.o += dr.c;
+    } else {
+      f.c = tc; f.r = tr;
+      f.px = undefined; f.py = undefined;
+      f.shootBonus = (f.shootBonus || 0) + 3;
+      logMsg('🚶 Степ-бэк: +3 к броску');
+      popText('+3', cen(f.c, f.r).x, cen(f.c, f.r).y - 25, '#fbbf24', 16);
+    }
+  } else if(dr.m === 'hesi'){
+    const defs = fig.filter(g =>
+      g.t !== f.t && g.c >= 0 &&
+      dist(g.c, g.r, f.c, f.r) === 1
+    );
+    const def = defs[0];
+    if(def){
+      const atk = f.d + Math.floor(Math.random()*6) + 1;
+      const dfn = def.z + Math.floor(Math.random()*6) + 1;
+      logMsg('💫 Хезитейшн ' + atk + ' vs ' + dfn);
+      if(atk >= dfn){
+        def.o = Math.max(0, def.o - 1);
+        logMsg('✓ ' + def.n + ' −1 ОД');
+      } else {
+        logMsg('✗');
+      }
+    }
+  }
+
+  const cd = f.d <= 2 ? 1 : (f.d <= 4 ? 2 : 3);
+  f.dribbleCd[dr.m] = cd;
+  logMsg('⏳ ' + dr.n + ': кулдаун ' + cd);
+
+  mode = 'sel';
+  if(f.o <= 0) end();
+  else { reHL(); ui(); draw(); }
+};
+
+// ===== ПЛАВНОЕ ДВИЖЕНИЕ (анимация) =====
+function smoothMove(f, fromC, fromR, toC, toR, duration, curve, ghostColor){
+  return new Promise(resolve => {
+    const fromPx = cen(fromC, fromR);
+    const toPx = cen(toC, toR);
+    const FRAMES = 26;
+    const dt = duration / FRAMES;
+    f._animating = true;
+
+    let i = 0;
+    function step(){
+      if(i > FRAMES){
+        f.px = toPx.x;
+        f.py = toPx.y;
+        f._animating = false;
+        render();
+        resolve();
+        return;
+      }
+      const t = i / FRAMES;
+      const ease = t < 0.5
+        ? 2*t*t
+        : 1 - Math.pow(-2*t + 2, 2) / 2;
+
+      let px = fromPx.x + (toPx.x - fromPx.x) * ease;
+      let py = fromPx.y + (toPx.y - fromPx.y) * ease;
+
+      if(curve){
+        const off = curve(t);
+        px += off[0];
+        py += off[1];
+      }
+      f.px = px;
+      f.py = py;
+
+      if(ghostColor && i > 0 && i % 3 === 0){
+        fx.push({
+          type:'ghost', x:px, y:py,
+          color: ghostColor,
+          life: 20, maxLife: 20,
+          size: S * 0.5
+        });
+      }
+      render();
+      i++;
+      setTimeout(step, dt);
+    }
+    step();
+  });
+}
+
+// ===== ВЫПОЛНЕНИЕ ДРИБЛИНГА =====
+execDribble = async function(t){
+  const f = byId(sel);
+  if(!f) return;
+  const def = byId(t.defId);
+  const dr = DRIBBLES.find(d => d.m === dribbleType);
+  if(!dr) return;
+  if(f.o < dr.c){ logMsg('Мало ОД'); return; }
+  if(f.dribbleCd[dr.m] > 0){ logMsg('⏳ кулдаун'); return; }
+
+  window.__animLock = true;
+
+  try {
+    const fromC = f.c, fromR = f.r;
+    const fromPx = cen(fromC, fromR);
+    const toPx = cen(t.c, t.r);
+    const dx = toPx.x - fromPx.x;
+    const dy = toPx.y - fromPx.y;
+    const len = Math.hypot(dx, dy) || 1;
+    const perpX = -dy / len;
+    const perpY = dx / len;
+    const flip = Math.random() < 0.5 ? 1 : -1;
+
+    // Бросок
+    const roll = Math.floor(Math.random()*6) + 1;
+    const defRoll = Math.floor(Math.random()*6) + 1;
+    const atkBonus = (f.bl > 0) ? -2 : 0;
+    const pen = (dribbleType === 'ankle') ? -3 : 0;
+    const atk = f.d + atkBonus + pen + roll;
+    const dfn = def ? def.z + defRoll : 99;
+    const success = atk >= dfn;
+    logMsg(dr.n + ': ' + atk + ' vs ' + dfn);
+
+    // Анимация по типу
+    if(dribbleType === 'cross'){
+      await smoothMove(f, fromC, fromR, t.c, t.r, 420, tt => {
+        if(tt < 0.35){
+          const k = tt / 0.35;
+          const amp = Math.sin(k * Math.PI * 2) * 14;
+          return [perpX * amp, perpY * amp];
+        }
+        return [0, 0];
+      }, 'rgba(34,197,94,0.5)');
+    } else if(dribbleType === 'spin'){
+      await smoothMove(f, fromC, fromR, t.c, t.r, 550, tt => {
+        const a = Math.sin(tt * Math.PI);
+        return [perpX * 22 * flip * a, perpY * 22 * flip * a];
+      }, 'rgba(168,85,247,0.6)');
+    } else if(dribbleType === 'ankle'){
+      await smoothMove(f, fromC, fromR, fromC, fromR, 200, tt => {
+        const amp = Math.sin(tt * Math.PI * 2) * 12;
+        return [perpX * amp, perpY * amp];
+      }, null);
+      await smoothMove(f, fromC, fromR, fromC, fromR, 200, tt => {
+        const amp = Math.sin(tt * Math.PI * 2) * 12 * -flip;
+        return [perpX * amp, perpY * amp];
+      }, null);
+      await smoothMove(f, fromC, fromR, t.c, t.r, 320, null, 'rgba(239,68,68,0.6)');
+    } else if(dribbleType === 'euro'){
+      await smoothMove(f, fromC, fromR, t.c, t.r, 500, tt => {
+        const a = Math.sin(tt * Math.PI);
+        return [perpX * 14 * flip * a, perpY * 14 * flip * a];
+      }, 'rgba(245,158,11,0.55)');
+    } else {
+      await smoothMove(f, fromC, fromR, t.c, t.r, 400, null, 'rgba(168,85,247,0.5)');
+    }
+
+    // Результат
+    if(success){
+      f.c = t.c;
+      f.r = t.r;
+      f.o -= dr.c;
+      f.mv = true;
+      logMsg('✓ ' + dr.n + '!');
+      popText(dr.n.toUpperCase() + '!', toPx.x, toPx.y - 34, '#22c55e', 15);
+      burst(toPx.x, toPx.y, '#22c55e', 10, 2);
+
+      if(dribbleType === 'spin' && def){
+        def.o = Math.max(0, def.o - 1);
+        logMsg('→ ' + def.n + ' -1 ОД');
+      } else if(dribbleType === 'euro'){
+        f.shootBonus = (f.shootBonus || 0) + 2;
+      } else if(dribbleType === 'ankle' && def){
+        def.fr = 1;
+        def.o = 0;
+        logMsg('🦴 ' + def.n + ' УПАЛ!');
+        const dp = cen(def.c, def.r);
+        setTimeout(() => {
+          popText('💫', dp.x, dp.y - 30, '#ef4444', 32);
+        }, 150);
+      }
+    } else {
+      f.o = Math.max(0, f.o - 1);
+      logMsg('✗ ' + dr.n + ' провалился');
+      popText('✗', fromPx.x, fromPx.y - 30, '#ef4444', 22);
+    }
+
+    const cd = f.d <= 2 ? 1 : (f.d <= 4 ? 2 : 3);
+    f.dribbleCd[dribbleType] = cd;
+    logMsg('⏳ ' + dr.n + ': кулдаун ' + cd);
+  } finally {
+    window.__animLock = false;
+    mode = 'sel';
+    hl = [];
+    if(f.o <= 0) end();
+    else { reHL(); ui(); draw(); }
+  }
+};
+
+// ===== КНОПКА ДРИБЛИНГА + МЕНЮ В UI =====
+const _uiD = ui;
+ui = function(){
+  _uiD();
+  if(over || sel === null) return;
+  const f = byId(sel);
+  if(!f || f.t !== turn || f.a) return;
+
+  const act = document.getElementById('act');
+
+  // Меню приёмов
+  if(mode === 'dribbleMenu'){
+    act.innerHTML = '';
+    const title = document.createElement('div');
+    title.textContent = '🏀 Дриблинг:';
+    title.style.cssText = 'color:#fbbf24;font-weight:bold;font-size:13px;width:100%;margin-bottom:4px';
+    act.appendChild(title);
+
+    if(!f.dribbleCd) f.dribbleCd = {};
+    DRIBBLES.forEach(dr => {
+      const cd = f.dribbleCd[dr.m] || 0;
+      const b = document.createElement('button');
+      b.className = 'abi';
+
+      if(cd > 0){
+        b.textContent = '⏳ ' + dr.n + ' (' + cd + ')';
+        b.disabled = true;
+        b.style.opacity = '0.4';
+      } else if(f.d < dr.req){
+        b.textContent = dr.n + ' (Дри ' + dr.req + ')';
+        b.disabled = true;
+        b.style.opacity = '0.3';
+      } else if(f.o < dr.c){
+        b.textContent = dr.n + ' (' + dr.c + ' ОД)';
+        b.disabled = true;
+        b.style.opacity = '0.5';
+      } else {
+        b.textContent = dr.n + ' (' + dr.c + ')';
+        b.onclick = () => pickDribble(dr);
+      }
+      act.appendChild(b);
+    });
+
+    const back = document.createElement('button');
+    back.textContent = '← Назад';
+    back.className = 'cancel';
+    back.onclick = () => { mode='sel'; ui(); draw(); };
+    act.appendChild(back);
+    return;
+  }
+
+  // Выбор цели для прохода
+  if(mode === 'dribbleTarget'){
+    act.innerHTML = '';
+    const title = document.createElement('div');
+    title.textContent = 'Выбери гекс для прохода';
+    title.style.cssText = 'color:#c084fc;font-weight:bold;font-size:13px;width:100%;margin-bottom:4px';
+    act.appendChild(title);
+    const back = document.createElement('button');
+    back.textContent = '← Отмена';
+    back.className = 'cancel';
+    back.onclick = () => { mode='sel'; hl=[]; reHL(); ui(); draw(); };
+    act.appendChild(back);
+    return;
+  }
+
+  // Кнопка «🏀 Дриблинг» в главной панели
+  if(mode !== 'sel') return;
+  if(ball !== f.i) return;
+  if(f.o < 1) return;
+
+  const endBtn = Array.from(act.querySelectorAll('button'))
+    .find(x => x.textContent.indexOf('Завершить') >= 0);
+
+  const b = document.createElement('button');
+  b.className = 'abi';
+  b.textContent = '🏀 Дриблинг';
+  b.onclick = () => { mode='dribbleMenu'; ui(); draw(); };
+  if(endBtn) act.insertBefore(b, endBtn);
+  else act.appendChild(b);
+};
+
+// ===== КЛИК ПО ЦЕЛИ ДРИБЛИНГА =====
+const _hmcD = handleModeClick;
+handleModeClick = function(col, row){
+  if(mode === 'dribbleTarget'){
+    const t = hl.find(h => h.c === col && h.r === row);
+    if(t) execDribble(t);
+    else { mode='sel'; hl=[]; reHL(); ui(); draw(); }
+    return;
+  }
+  return _hmcD(col, row);
+};
+
+/* ============================================================
+   КОМАНДНЫЕ СПОСОБНОСТИ
+   ============================================================ */
+
+function ensureTeamCd(f){
+  if(!f.teamCd) f.teamCd = {};
+}
+
+// ===== АЛЕЙ-УП =====
+function startAlley(){
+  const f = byId(sel);
+  if(!f || ball !== f.i || f.o < 2) return;
+  ensureTeamCd(f);
+  if(f.teamCd.alley > 0){
+    logMsg('⏳ Алей-уп: кулдаун ' + f.teamCd.alley);
+    return;
+  }
+
+  const h = hoops[1 - f.t];
+  const ally = fig.find(g =>
+    g.t === f.t && g.i !== f.i && g.c >= 0 &&
+    dist(g.c, g.r, h.c, h.r) <= 1
+  );
+  if(!ally){ logMsg('⚠ Нет союзника у кольца'); return; }
+
+  f.o -= 2;
+  f.teamCd.alley = TEAM_CD.alley;
+
+  // Перехват
+  let int = null, br = 0;
+  fig.forEach(g => {
+    if(g.t === f.t || g.c < 0) return;
+    const minD = Math.min(
+      dist(g.c, g.r, f.c, f.r),
+      dist(g.c, g.r, ally.c, ally.r)
+    );
+    if(minD > 2) return;
+    const roll = g.z + Math.floor(Math.random()*6) + 1;
+    if(roll > br){ br = roll; int = g; }
+  });
+
+  if(int && br >= f.d + Math.floor(Math.random()*6) + 1){
+    ball = int.i;
+    logMsg('🚫 Перехват алей-паса: ' + int.n);
+    if(f.o <= 0) end();
+    else { ui(); draw(); }
+    return;
+  }
+
+  const from = cen(f.c, f.r);
+  const hp = cen(h.c, h.r);
+  ball = null;
+
+  flyBall(from.x, from.y, hp.x, hp.y, () => {
+    let pen = 0;
+    fig.forEach(o => {
+      if(o.t !== ally.t && o.c >= 0 &&
+         dist(o.c, o.r, ally.c, ally.r) <= 1) pen = 2;
+    });
+    const roll = Math.floor(Math.random()*6) + 1;
+    const tot = ally.b + 5 + roll;
+    const win = tot >= (5 + pen);
+    logMsg('🏀 Алей-уп ' + ally.n + ': ' + tot + ' vs ' + (5 + pen));
+
+    if(win){
+      popText('АЛЕЙ-УП +2!', hp.x, hp.y - 30, '#22c55e', 22);
+      sc[f.t] += 2;
+      burst(hp.x, hp.y, '#22c55e', 25, 4);
+      burst(hp.x, hp.y, '#fbbf24', 15, 3);
+      setTimeout(() => {
+        if(sc[f.t] >= 21){
+          over = true;
+          logMsg('🏆 Победа!');
+          sel = null; hl = [];
+          ui(); draw();
+          return;
+        }
+        resetPositions(f.t);
+      }, 700);
+    } else {
+      popText('Мимо', hp.x, hp.y - 30, '#ef4444', 22);
+      setTimeout(() => { rebound(f.t); end(); }, 400);
+    }
+  });
+}
+
+// ===== ПИК-Н-РОЛЛ =====
+function doPickAndRoll(){
+  const f = byId(sel);
+  if(!f || f.o < 1) return;
+  ensureTeamCd(f);
+  if(f.teamCd.pickroll > 0){
+    logMsg('⏳ Пик-н-ролл: кулдаун ' + f.teamCd.pickroll);
+    return;
+  }
+
+  const ally = fig.find(g =>
+    g.t === f.t && g.i !== f.i && g.c >= 0 &&
+    dist(g.c, g.r, f.c, f.r) <= 2
+  );
+  if(!ally){ logMsg('⚠ Нет союзника рядом'); return; }
+
+  const enemy = fig.find(g =>
+    g.t !== f.t && g.c >= 0 &&
+    dist(g.c, g.r, ally.c, ally.r) <= 2
+  );
+  if(!enemy){ logMsg('⚠ Нет врага для скрина'); return; }
+
+  f.o -= 1;
+  f.teamCd.pickroll = TEAM_CD.pickroll;
+  enemy.o = Math.max(0, enemy.o - 1);
+  logMsg('🤝 Пик-н-ролл: ' + ally.n + ' скрин на ' + enemy.n);
+
+  const p = cen(ally.c, ally.r);
+  popText('🚧 СКРИН', p.x, p.y - 32, '#06b6d4', 16);
+  const ep = cen(enemy.c, enemy.r);
+  popText('-1 ОД', ep.x, ep.y - 30, '#ef4444', 14);
+  burst(p.x, p.y, '#06b6d4', 12, 2.5);
+
+  if(f.o <= 0) end();
+  else { ui(); draw(); }
+}
+
+// ===== БЫСТРЫЙ ОТРЫВ =====
+async function doFastBreak(){
+  const f = byId(sel);
+  if(!f || ball !== f.i || f.o < 2) return;
+  ensureTeamCd(f);
+  if(f.teamCd.fastbreak > 0){
+    logMsg('⏳ Отрыв: кулдаун ' + f.teamCd.fastbreak);
+    return;
+  }
+
+  const h = hoops[1 - f.t];
+  const myAx = toAx(f.c, f.r);
+  const dirs = [[1,0],[-1,0],[0,1],[0,-1],[1,-1],[-1,1]];
+  let best = null, bd = dist(f.c, f.r, h.c, h.r);
+
+  dirs.forEach(d => {
+    const tOff = toOff(myAx.q + d[0]*2, myAx.r + d[1]*2);
+    if(tOff.c < 0 || tOff.c >= COLS ||
+       tOff.r < 0 || tOff.r >= ROWS) return;
+    if(figAt(tOff.c, tOff.r)) return;
+
+    const mid = toOff(myAx.q + d[0], myAx.r + d[1]);
+    const midFig = figAt(mid.c, mid.r);
+    if(midFig && midFig.t !== f.t) return;
+
+    const dh = dist(tOff.c, tOff.r, h.c, h.r);
+    if(dh < bd){ bd = dh; best = tOff; }
+  });
+
+  if(!best){ logMsg('⚠ Некуда бежать'); return; }
+
+  f.o -= 2;
+  f.teamCd.fastbreak = TEAM_CD.fastbreak;
+  const fromC = f.c, fromR = f.r;
+  ghostTrail(f, fromC, fromR, best.c, best.r, 'rgba(6,182,212,0.8)', 8);
+  f.c = best.c;
+  f.r = best.r;
+  f.px = undefined; f.py = undefined;
+  f.mv = true;
+
+  logMsg('🚀 Отрыв!');
+  const p = cen(best.c, best.r);
+  popText('🚀 ОТРЫВ', p.x, p.y - 30, '#06b6d4', 18);
+  burst(p.x, p.y, '#06b6d4', 10, 3);
+
+  if(f.o <= 0) end();
+  else { ui(); draw(); }
+}
+
+// ===== ДЛИННЫЙ ПАС =====
+function startLongPass(){
+  const f = byId(sel);
+  if(!f || ball !== f.i || f.o < 2) return;
+  ensureTeamCd(f);
+  if(f.teamCd.longpass > 0){
+    logMsg('⏳ Длинный пас: кулдаун ' + f.teamCd.longpass);
+    return;
+  }
+
+  mode = 'pass';
+  hl = fig.filter(g =>
+    g.t === f.t && g.i !== f.i && g.c >= 0 &&
+    dist(f.c, f.r, g.c, g.r) <= 6
+  ).map(g => ({c: g.c, r: g.r, m: 'pass', id: g.i}));
+
+  if(!hl.length){ logMsg('⚠ Нет союзников'); mode='sel'; return; }
+  window.__longPassMode = true;
+  window.__longPassCaster = f.i;
+  ui(); draw();
+}
+
+// Перехват doPass — длинный пас с риском
+const _doPassL = doPass;
+doPass = function(targetId){
+  if(window.__longPassMode){
+    window.__longPassMode = false;
+    const f = byId(window.__longPassCaster);
+    const t = byId(targetId);
+    if(!f || !t) return _doPassL(targetId);
+
+    const d = dist(f.c, f.r, t.c, t.r);
+    if(d <= 3){ return _doPassL(targetId); }
+
+    ensureTeamCd(f);
+    f.teamCd.longpass = TEAM_CD.longpass;
+    logMsg('⏳ Длинный пас: кулдаун ' + TEAM_CD.longpass);
+
+    // Риск перехвата выше
+    let int = null, br = 0;
+    fig.forEach(g => {
+      if(g.t === f.t || g.c < 0) return;
+      const minD = Math.min(
+        dist(g.c, g.r, f.c, f.r),
+        dist(g.c, g.r, t.c, t.r)
+      );
+      if(minD > 2) return;
+      const roll = g.z + Math.floor(Math.random()*6) + 1 + 3;
+      if(roll > br){ br = roll; int = g; }
+    });
+
+    if(int){
+      const pr = f.d + Math.floor(Math.random()*6) + 1 - 1;
+      if(br >= pr){
+        f.o -= 2;
+        ball = int.i;
+        logMsg('🚫 ПЕРЕХВАТ длинного паса: ' + int.n);
+        mode='sel'; hl=[];
+        if(f.o <= 0) end();
+        else { ui(); draw(); }
+        return;
+      }
+    }
+
+    const from = cen(f.c, f.r), to = cen(t.c, t.r);
+    ball = null;
+    f.o -= 2;
+    flyBall(from.x, from.y, to.x, to.y, () => {
+      ball = targetId;
+      logMsg('🎯 Длинный пас ' + f.n + ' → ' + t.n);
+      popText('🎯', to.x, to.y - 30, '#3b82f6', 22);
+      mode='sel'; hl=[];
+      if(f.o <= 0) end();
+      else { ui(); draw(); }
+    });
+    return;
+  }
+  return _doPassL(targetId);
+};
+
+// ===== КНОПКИ КОМАНДНЫХ СПОСОБНОСТЕЙ В UI =====
+const _uiT = ui;
+ui = function(){
+  _uiT();
+  if(over || sel === null) return;
+  const f = byId(sel);
+  if(!f || f.t !== turn || f.a) return;
+  if(mode !== 'sel') return;
+
+  const act = document.getElementById('act');
+  if(!act) return;
+
+  // Убираем старые командные кнопки
+  act.querySelectorAll('[data-team]').forEach(b => b.remove());
+
+  ensureTeamCd(f);
+  const hasBall = ball === f.i;
+  const h = hoops[1 - f.t];
+  const dHoop = dist(f.c, f.r, h.c, h.r);
+  const endBtn = Array.from(act.querySelectorAll('button'))
+    .find(x => x.textContent.indexOf('Завершить') >= 0);
+
+  function addBtn(label, onClick, disabled, cd){
+    const b = document.createElement('button');
+    b.dataset.team = '1';
+    b.textContent = disabled
+      ? '⏳ ' + label + ' (' + cd + ')'
+      : label;
+    b.style.background = '#06b6d4';
+    b.style.fontWeight = 'bold';
+    if(disabled){ b.style.opacity = '0.4'; b.disabled = true; }
+    else b.onclick = onClick;
+    if(endBtn) act.insertBefore(b, endBtn);
+    else act.appendChild(b);
+  }
+
+  // Алей-уп
+  if(hasBall && f.o >= 2){
+    const ally = fig.find(g =>
+      g.t === f.t && g.i !== f.i && g.c >= 0 &&
+      dist(g.c, g.r, h.c, h.r) <= 1
+    );
+    if(ally){
+      const cd = f.teamCd.alley || 0;
+      addBtn('🏀 Алей-уп', startAlley, cd > 0, cd);
+    }
+  }
+
+  // Пик-н-ролл
+  if(f.o >= 1){
+    const ally = fig.find(g =>
+      g.t === f.t && g.i !== f.i && g.c >= 0 &&
+      dist(g.c, g.r, f.c, f.r) <= 2
+    );
+    const enemy = ally ? fig.find(g =>
+      g.t !== f.t && g.c >= 0 &&
+      dist(g.c, g.r, ally.c, ally.r) <= 2
+    ) : null;
+    if(ally && enemy){
+      const cd = f.teamCd.pickroll || 0;
+      addBtn('🚧 Пик-н-ролл', doPickAndRoll, cd > 0, cd);
+    }
+  }
+
+  // Отрыв
+  if(hasBall && f.o >= 2 && dHoop > 2){
+    const cd = f.teamCd.fastbreak || 0;
+    addBtn('🚀 Отрыв', doFastBreak, cd > 0, cd);
+  }
+
+  // Длинный пас
+  if(hasBall && f.o >= 2){
+    const cd = f.teamCd.longpass || 0;
+    addBtn('🎯 Длинный пас', startLongPass, cd > 0, cd);
+  }
+};
+/* ============================================================
+   ЧАСТЬ 10a-1: ГЛАВНОЕ МЕНЮ
+   ============================================================ */
+
+// ===== ПОМОЩЬ =====
+document.getElementById('mHelp').onclick = () => {
+  alert(
+    'КАК ИГРАТЬ:\n\n' +
+    '1. Собери команду (5, 3 или 1 фигуру).\n\n' +
+    '2. Ходы по очереди. Активируй фигуру тапом.\n\n' +
+    '3. Действия: Бросок, Пас, Отбор, Дриблинг, Способности.\n\n' +
+    '4. Победа: 21 очко.\n\n' +
+    '5. Меню → Сохранить.'
+  );
+};
+
+// ===== ВЫБОР РЕЖИМА =====
+document.getElementById('mMode').onclick = () => {
+  const LBL = {'5v5':'5 на 5','3v3':'3 на 3','1v1':'1 на 1'};
+  const div = document.createElement('div');
+  div.className = 'ov show';
+  div.style.zIndex = '800';
+  div.innerHTML =
+    '<h2>🏀 Режим</h2>' +
+    '<button data-m="5v5" class="btn green" style="max-width:280px">5 на 5</button>' +
+    '<button data-m="3v3" class="btn blue" style="max-width:280px">3 на 3</button>' +
+    '<button data-m="1v1" class="btn blue" style="max-width:280px">1 на 1</button>' +
+    '<button data-c class="btn gray" style="max-width:280px;margin-top:16px">← Назад</button>';
+  document.body.appendChild(div);
+
+  div.querySelectorAll('[data-m]').forEach(b => {
+    b.onclick = () => {
+      gameMode = b.getAttribute('data-m');
+      try { localStorage.setItem('ib_mode', gameMode); } catch(e){}
+      updateModeLabel();
+      div.remove();
+      logMsg('Режим: ' + LBL[gameMode]);
+    };
+  });
+  div.querySelector('[data-c]').onclick = () => div.remove();
+};
+
+function updateModeLabel(){
+  const LBL = {'5v5':'5 на 5','3v3':'3 на 3','1v1':'1 на 1'};
+  const b = document.getElementById('mMode');
+  if(b) b.textContent = '🏀 Режим: ' + LBL[gameMode];
+}
+updateModeLabel();
+
+// ===== ИГРАТЬ ЛОКАЛЬНО =====
+document.getElementById('mLocal').onclick = () => {
+  aiEnabled = false;
+  if(typeof showTeamPicker === 'function'){
+    showTeamPicker(
+      () => {
+        document.getElementById('scrMain').classList.remove('show');
+        showSetup();
+      },
+      () => showMain()
+    );
+  } else {
+    // Fallback если team-picker ещё не определён
+    showSetup();
+  }
+};
+
+// ===== КНОПКА НАЗАД В SETUP =====
+document.getElementById('setupBack').onclick = () => showMain();
+/* ============================================================
+   ЧАСТЬ 10a-2: ВЫБОР СОСТАВА + СТАРТ ИГРЫ
+   ============================================================ */
+
+// ===== ПОКАЗ ЭКРАНА SETUP =====
+function showSetup(){
+  hideAllScreens();
+  document.getElementById('setup').classList.add('show');
+  renderPool();
+  updateSetupButtons();
+}
+
+function updateSetupButtons(){
+  const need = (MODE_PRESETS[gameMode] || MODE_PRESETS['5v5']).count;
+  const sb = document.getElementById('startBtn');
+  if(!sb) return;
+  sb.style.background = (teamGreen.length === need) ? '#22c55e' : '#e94560';
+  const h2 = document.getElementById('setupTitle');
+  if(h2) h2.textContent = 'Выбор состава ' + gameMode + ' (по ' + need + ' фигур)';
+}
+
+document.getElementById('startBtn').onclick = () => startGame();
+
+// ===== РЕНДЕР ПУЛА ФИГУР =====
+function renderPool(){
+  const need = (MODE_PRESETS[gameMode] || MODE_PRESETS['5v5']).count;
+  const isAI = aiEnabled;
+  const pool = document.getElementById('pool');
+  if(!pool) return;
+  pool.innerHTML = '';
+
+  // Кнопки всех фигур
+  Object.keys(F).forEach(n => {
+    const used = teamGreen.indexOf(n) >= 0 || teamRed.indexOf(n) >= 0;
+    const b = document.createElement('button');
+    b.textContent = F[n].p + ' ' + n;
+    b.disabled = used;
+    b.onclick = () => {
+      if(pickingTeam === 0 && teamGreen.length < need){
+        teamGreen.push(n);
+        if(teamGreen.length >= need && !isAI) pickingTeam = 1;
+      } else if(!isAI && pickingTeam === 1 && teamRed.length < need){
+        teamRed.push(n);
+      }
+      renderPool();
+      updateSetupButtons();
+    };
+    pool.appendChild(b);
+  });
+
+  // Зелёные
+  const tg = document.getElementById('tg');
+  tg.innerHTML = teamGreen.length
+    ? teamGreen.map((n, i) =>
+        '<span class="chip g" data-g="' + i + '">' + n + ' ×</span>'
+      ).join('')
+    : '—';
+  tg.querySelectorAll('[data-g]').forEach(el => {
+    el.onclick = () => {
+      teamGreen.splice(parseInt(el.getAttribute('data-g')), 1);
+      pickingTeam = 0;
+      renderPool();
+      updateSetupButtons();
+    };
+  });
+
+  // Красные
+  const tr = document.getElementById('tr');
+  if(isAI){
+    tr.innerHTML = '<i style="color:#94a3b8">ИИ выберет сам</i>';
+  } else {
+    tr.innerHTML = teamRed.length
+      ? teamRed.map((n, i) =>
+          '<span class="chip r" data-r="' + i + '">' + n + ' ×</span>'
+        ).join('')
+      : '—';
+    tr.querySelectorAll('[data-r]').forEach(el => {
+      el.onclick = () => {
+        teamRed.splice(parseInt(el.getAttribute('data-r')), 1);
+        pickingTeam = 1;
+        renderPool();
+        updateSetupButtons();
+      };
+    });
+  }
+
+  // Кто выбирает
+  const who = document.getElementById('who');
+  if(who){
+    who.textContent = isAI
+      ? 'Зелёные (ты) — ' + gameMode
+      : (pickingTeam === 0 ? 'Зелёные' : 'Красные') + ' (' + gameMode + ')';
+  }
+}
+
+// ===== СТАРТ ИГРЫ =====
+function startGame(){
+  const need = (MODE_PRESETS[gameMode] || MODE_PRESETS['5v5']).count;
+
+  if(teamGreen.length < need){
+    alert('Нужно ' + need + ' фигур Зелёным');
+    return;
+  }
+
+  // ИИ добирает себе
+  if(aiEnabled){
+    const pool = Object.keys(F).filter(n => teamGreen.indexOf(n) < 0);
+    for(let i = pool.length - 1; i > 0; i--){
+      const j = Math.floor(Math.random() * (i + 1));
+      const t = pool[i]; pool[i] = pool[j]; pool[j] = t;
+    }
+    teamRed = pool.slice(0, need);
+  } else if(teamRed.length < need){
+    alert('Нужно ' + need + ' фигур Красным');
+    return;
+  }
+
+  // Скрываем setup, показываем игру
+  document.getElementById('setup').classList.remove('show');
+  document.getElementById('game').classList.add('show');
+
+  // Инициализация
+  initGame(teamGreen.slice(0, need), teamRed.slice(0, need));
+
+  // Экран передачи телефона (если включён)
+  if(!aiEnabled && typeof showPassScreenFn === 'function'){
+    setTimeout(showPassScreenFn, 500);
+  }
+}
+
+// ===== СТАРТ ПРОТИВ ИИ (без выбора команды соперника) =====
+document.getElementById('mAI').onclick = () => {
+  const div = document.createElement('div');
+  div.className = 'ov show';
+  div.style.zIndex = '800';
+  div.innerHTML =
+    '<h2>🤖 Сложность ИИ</h2>' +
+    '<div class="sub">Ты за 🟢 Зелёных</div>' +
+    '<button data-d="easy" class="btn green" style="max-width:280px">🟢 Лёгкий</button>' +
+    '<button data-d="medium" class="btn orange" style="max-width:280px">🟡 Средний</button>' +
+    '<button data-d="hard" class="btn red" style="max-width:280px">🔴 Сложный</button>' +
+    '<button data-c class="btn gray" style="max-width:280px;margin-top:16px">← Назад</button>';
+  document.body.appendChild(div);
+
+  div.querySelectorAll('[data-d]').forEach(b => {
+    b.onclick = () => {
+      aiEnabled = true;
+      aiDifficulty = b.getAttribute('data-d');
+      div.remove();
+
+      // Сброс составов
+      teamGreen = [];
+      teamRed = [];
+      pickingTeam = 0;
+
+      // Опционально: если есть ростер — предложить выбрать команду
+      if(typeof showTeamPicker === 'function' && allTeams().length){
+        showTeamPicker(
+          () => {
+            document.getElementById('scrMain').classList.remove('show');
+            showSetup();
+          },
+          () => showMain()
+        );
+      } else {
+        document.getElementById('scrMain').classList.remove('show');
+        showSetup();
+      }
+      logMsg('🤖 ИИ: ' + aiDifficulty);
+    };
+  });
+  div.querySelector('[data-c]').onclick = () => div.remove();
+};
+/* ============================================================
+   ЧАСТЬ 10a-3: РОСТЕР КОМАНД
+   ============================================================ */
+
+// ===== СПИСОК КОМАНД =====
+showRoster = function(){
+  showScreen('scrRoster');
+  const cont = document.getElementById('rosterContent');
+  const teams = allTeams();
+
+  let html = '<h1 style="font-size:20px;text-align:center;margin:0 0 4px">🏆 Ростер команд</h1>';
+  html += '<div class="sub">Команды с готовым составом фигур</div>';
+  html += '<button id="rosterCreate" class="btn purple" style="margin:12px 0">🎨 Создать команду</button>';
+  html += '<div style="display:flex;flex-direction:column;gap:6px">';
+
+  teams.forEach(t => {
+    const c5 = (t.lineups && t.lineups['5v5']) ? t.lineups['5v5'].length : 0;
+    const c3 = (t.lineups && t.lineups['3v3']) ? t.lineups['3v3'].length : 0;
+    const c1 = (t.lineups && t.lineups['1v1']) ? t.lineups['1v1'].length : 0;
+
+    html += '<div style="display:flex;align-items:center;gap:10px;padding:10px 12px;background:#16213e;border-radius:10px;border-left:6px solid ' + t.c1 + '">';
+    html += '<div class="team-dot" style="background:' + t.c1 + ';border:3px solid ' + t.c2 + '"></div>';
+    html += '<div style="flex:1;min-width:0">';
+    html += '<div style="font-weight:bold;font-size:14px">' + t.name + '</div>';
+    html += '<div style="color:#94a3b8;font-size:11px">5v5: ' + c5 + ' · 3v3: ' + c3 + ' · 1v1: ' + c1 + '</div>';
+    html += '</div>';
+    html += '<button data-edit="' + t.id + '" style="padding:6px 10px;background:#3b82f6;color:#fff;border:0;border-radius:6px;font-size:12px;cursor:pointer;font-family:inherit">✏️</button>';
+    if(!t.builtIn){
+      html += '<button data-del="' + t.id + '" style="padding:6px 10px;background:#ef4444;color:#fff;border:0;border-radius:6px;font-size:12px;cursor:pointer;font-family:inherit">✖</button>';
+    }
+    html += '</div>';
+  });
+
+  html += '</div>';
+  html += '<button id="rosterClose" class="btn gray" style="margin-top:16px">← Закрыть</button>';
+  cont.innerHTML = html;
+
+  cont.querySelectorAll('[data-edit]').forEach(b => {
+    b.onclick = () => showTeamEditor(b.getAttribute('data-edit'));
+  });
+  cont.querySelectorAll('[data-del]').forEach(b => {
+    b.onclick = () => {
+      const id = b.getAttribute('data-del');
+      if(!confirm('Удалить команду?')) return;
+      const custom = getCustomTeams().filter(t => t.id !== id);
+      saveCustomTeams(custom);
+      showRoster();
+    };
+  });
+  document.getElementById('rosterCreate').onclick = () => showTeamEditor(null);
+  document.getElementById('rosterClose').onclick = () => showMain();
+};
+
+document.getElementById('mRoster').onclick = showRoster;
+
+// ===== РЕДАКТОР КОМАНДЫ =====
+showTeamEditor = function(teamId){
+  const isNew = !teamId;
+  const existing = isNew ? null : getTeamById(teamId);
+
+  let name = existing ? existing.name : '';
+  let c1 = existing ? existing.c1 : '#22c55e';
+  let c2 = existing ? existing.c2 : '#166534';
+  let lineups = existing && existing.lineups
+    ? JSON.parse(JSON.stringify(existing.lineups))
+    : {'5v5':[],'3v3':[],'1v1':[]};
+  let currentMode = '5v5';
+
+  // Модальное окно поверх
+  const div = document.createElement('div');
+  div.style.cssText = 'position:fixed;inset:0;background:#1a1a2e;z-index:900;overflow-y:auto;padding:16px;color:#fff;font-family:inherit';
+  document.body.appendChild(div);
+
+  function needCount(){
+    return currentMode === '5v5' ? 5
+         : currentMode === '3v3' ? 3
+         : 1;
+  }
+
+  function render(){
+    const need = needCount();
+    const current = lineups[currentMode] || [];
+
+    let html = '<div style="max-width:600px;margin:0 auto">';
+    html += '<h2 style="text-align:center;margin:0 0 10px">' +
+      (isNew ? '🎨 Новая команда' : '✏️ Редактирование') + '</h2>';
+
+    // Превью
+    html += '<div style="text-align:center;margin-bottom:12px">';
+    html += '<span style="display:inline-block;width:60px;height:60px;border-radius:50%;background:' + c1 + ';border:4px solid ' + c2 + '"></span>';
+    html += '</div>';
+
+    // Имя
+    html += '<div style="color:#94a3b8;font-size:12px;margin-bottom:6px">Название</div>';
+    html += '<input id="teName" type="text" maxlength="16" value="' + name.replace(/"/g,'&quot;') + '" placeholder="Название команды">';
+
+    // Цвет 1
+    html += '<div style="color:#94a3b8;font-size:12px;margin:10px 0 6px">Основной цвет</div>';
+    html += '<div style="display:flex;flex-wrap:wrap;gap:4px;margin-bottom:10px">';
+    PALETTE.forEach(c => {
+      html += '<button data-c1="' + c + '" style="width:32px;height:32px;background:' + c + ';border:3px solid ' + (c === c1 ? '#fbbf24' : 'transparent') + ';border-radius:8px;cursor:pointer"></button>';
+    });
+    html += '</div>';
+
+    // Цвет 2
+    html += '<div style="color:#94a3b8;font-size:12px;margin-bottom:6px">Второй цвет (обводка)</div>';
+    html += '<div style="display:flex;flex-wrap:wrap;gap:4px;margin-bottom:14px">';
+    PALETTE.forEach(c => {
+      html += '<button data-c2="' + c + '" style="width:32px;height:32px;background:' + c + ';border:3px solid ' + (c === c2 ? '#fbbf24' : 'transparent') + ';border-radius:8px;cursor:pointer"></button>';
+    });
+    html += '</div>';
+
+    // Выбор режима
+    html += '<div style="color:#94a3b8;font-size:12px;margin-bottom:6px">Режим состава</div>';
+    html += '<div style="display:flex;gap:4px;margin-bottom:10px">';
+    ['5v5','3v3','1v1'].forEach(m => {
+      const cnt = (lineups[m] || []).length;
+      const nm = m === '5v5' ? 5 : m === '3v3' ? 3 : 1;
+      html += '<button data-mode="' + m + '" class="btn" style="flex:1;max-width:none;padding:8px 4px;font-size:12px;background:' + (m === currentMode ? '#22c55e' : '#16213e') + '">';
+      html += m + ' (' + cnt + '/' + nm + ')';
+      html += '</button>';
+    });
+    html += '</div>';
+
+    // Текущий состав
+    html += '<div style="background:#16213e;padding:8px;border-radius:8px;margin-bottom:10px;min-height:34px;font-size:12px">';
+    if(current.length){
+      current.forEach((n, i) => {
+        html += '<span data-rm="' + i + '" style="display:inline-block;background:' + c1 + ';padding:4px 8px;margin:3px;border-radius:6px;cursor:pointer;font-size:12px">';
+        html += (ICONS[n] || '🐜') + ' ' + n + ' ✖';
+        html += '</span>';
+      });
+    } else {
+      html += '<i style="color:#64748b">Состав пуст</i>';
+    }
+    html += '</div>';
+
+    // Пул фигур
+    html += '<div style="color:#94a3b8;font-size:12px;margin-bottom:6px">Выбери ' + need + ' фигур (' + current.length + '/' + need + ')</div>';
+    html += '<div style="display:flex;flex-wrap:wrap;gap:4px;margin-bottom:14px">';
+    Object.keys(F).forEach(n => {
+      const used = current.indexOf(n) >= 0;
+      html += '<button data-fig="' + n + '" ' + (used ? 'disabled' : '') + ' style="padding:5px 8px;background:#3b82f6;color:#fff;border:0;border-radius:4px;font-size:11px;cursor:pointer;opacity:' + (used ? '0.3' : '1') + ';font-family:inherit">';
+      html += (ICONS[n] || '🐜') + ' ' + n;
+      html += '</button>';
+    });
+    html += '</div>';
+
+    // Кнопки
+    html += '<button id="teSave" class="btn green" style="max-width:none">💾 Сохранить</button>';
+    html += '<button id="teCancel" class="btn gray" style="max-width:none;margin-top:8px">← Отмена</button>';
+    html += '</div>';
+
+    div.innerHTML = html;
+
+    // Слушатели
+    div.querySelector('#teName').oninput = e => { name = e.target.value; };
+
+    div.querySelectorAll('[data-c1]').forEach(b => {
+      b.onclick = () => { c1 = b.getAttribute('data-c1'); render(); };
+    });
+    div.querySelectorAll('[data-c2]').forEach(b => {
+      b.onclick = () => { c2 = b.getAttribute('data-c2'); render(); };
+    });
+    div.querySelectorAll('[data-mode]').forEach(b => {
+      b.onclick = () => { currentMode = b.getAttribute('data-mode'); render(); };
+    });
+    div.querySelectorAll('[data-rm]').forEach(b => {
+      b.onclick = () => {
+        lineups[currentMode].splice(parseInt(b.getAttribute('data-rm')), 1);
+        render();
+      };
+    });
+    div.querySelectorAll('[data-fig]').forEach(b => {
+      b.onclick = () => {
+        if(lineups[currentMode].length >= need) return;
+        lineups[currentMode].push(b.getAttribute('data-fig'));
+        render();
+      };
+    });
+
+    // Сохранение
+    div.querySelector('#teSave').onclick = () => {
+      const n = div.querySelector('#teName').value.trim();
+      if(!n){ alert('Введи название'); return; }
+
+      const hasAny = ['5v5','3v3','1v1'].some(m => (lineups[m] || []).length > 0);
+      if(!hasAny){ alert('Собери хотя бы один состав'); return; }
+
+      const custom = getCustomTeams();
+      if(isNew){
+        custom.push({id: 'custom_' + Date.now(), name: n, c1, c2, builtIn: false, lineups});
+      } else {
+        const idx = custom.findIndex(t => t.id === teamId);
+        if(idx >= 0){
+          custom[idx] = {...custom[idx], name: n, c1, c2, lineups};
+        } else {
+          custom.push({id: 'custom_' + Date.now(), name: n, c1, c2, builtIn: false, lineups});
+        }
+      }
+      saveCustomTeams(custom);
+      div.remove();
+      showRoster();
+    };
+
+    div.querySelector('#teCancel').onclick = () => {
+      div.remove();
+      showRoster();
+    };
+  }
+
+  render();
+};
+/* ============================================================
+   ЧАСТЬ 10a-4: ВЫБОР КОМАНД ПЕРЕД ИГРОЙ
+   ============================================================ */
+
+showTeamPicker = function(afterDone, afterCancel){
+  showScreen('scrTeamPick');
+  const cont = document.getElementById('teamPickContent');
+  const teams = allTeams();
+  const need = (MODE_PRESETS[gameMode] || MODE_PRESETS['5v5']).count;
+
+  let myPick = (team1 && team1 !== 'manual') ? team1.id : 'manual';
+  let oppPick = (team2 && team2 !== 'manual') ? team2.id : 'manual';
+
+  function hasLineup(t){
+    if(!t || !t.lineups) return false;
+    const l = t.lineups[gameMode];
+    return l && l.length === need;
+  }
+
+  function render(){
+    let html = '<h1 style="font-size:20px;text-align:center;margin:0 0 4px">🏀 Выбор команд</h1>';
+    html += '<div class="sub">Режим: ' + gameMode + ' · нужно ' + need + ' фигур</div>';
+
+    // ===== МОЯ КОМАНДА =====
+    html += '<div style="font-weight:bold;color:#22c55e;margin-bottom:6px">🟢 Твоя команда</div>';
+    html += '<div style="display:flex;flex-direction:column;gap:4px;margin-bottom:14px">';
+
+    // Кнопка "вручную"
+    html += '<button data-my="manual" class="team-card' + (myPick === 'manual' ? ' sel-mine' : '') + '">';
+    html += '<span class="team-dot" style="background:#22c55e;display:flex;align-items:center;justify-content:center;font-size:14px">🎨</span>';
+    html += '<span style="flex:1;font-weight:bold">Собрать вручную</span>';
+    if(myPick === 'manual') html += '<span style="color:#22c55e">✓</span>';
+    html += '</button>';
+
+    teams.forEach(t => {
+      const h = hasLineup(t);
+      const sel = myPick === t.id;
+      html += '<button data-my="' + t.id + '" ' + (h ? '' : 'disabled') + ' class="team-card' + (sel ? ' sel-mine' : '') + '">';
+      html += '<span class="team-dot" style="background:' + t.c1 + ';border:2px solid ' + t.c2 + '"></span>';
+      html += '<span style="flex:1;font-weight:bold">' + t.name + '</span>';
+      if(!h) html += '<span style="font-size:10px;color:#fbbf24">нет состава</span>';
+      if(sel) html += '<span style="color:#22c55e">✓</span>';
+      html += '</button>';
+    });
+    html += '</div>';
+
+    // ===== КОМАНДА СОПЕРНИКА =====
+    html += '<div style="font-weight:bold;color:#ef4444;margin-bottom:6px">🔴 Команда соперника</div>';
+    html += '<div style="display:flex;flex-direction:column;gap:4px;margin-bottom:16px">';
+
+    html += '<button data-opp="manual" class="team-card' + (oppPick === 'manual' ? ' sel-opp' : '') + '">';
+    html += '<span class="team-dot" style="background:#ef4444;display:flex;align-items:center;justify-content:center;font-size:14px">🎨</span>';
+    html += '<span style="flex:1;font-weight:bold">Собрать вручную</span>';
+    if(oppPick === 'manual') html += '<span style="color:#ef4444">✓</span>';
+    html += '</button>';
+
+    teams.forEach(t => {
+      const h = hasLineup(t);
+      const sel = oppPick === t.id;
+      html += '<button data-opp="' + t.id + '" ' + (h ? '' : 'disabled') + ' class="team-card' + (sel ? ' sel-opp' : '') + '">';
+      html += '<span class="team-dot" style="background:' + t.c1 + ';border:2px solid ' + t.c2 + '"></span>';
+      html += '<span style="flex:1;font-weight:bold">' + t.name + '</span>';
+      if(!h) html += '<span style="font-size:10px;color:#fbbf24">нет состава</span>';
+      if(sel) html += '<span style="color:#ef4444">✓</span>';
+      html += '</button>';
+    });
+    html += '</div>';
+
+    // ===== КНОПКИ =====
+    html += '<button id="tpGo" class="btn green" style="max-width:400px">✅ Готово</button>';
+    html += '<button id="tpCancel" class="btn gray" style="max-width:400px;margin-top:8px">← Назад</button>';
+
+    cont.innerHTML = html;
+
+    // Слушатели
+    cont.querySelectorAll('[data-my]').forEach(b => {
+      b.onclick = () => { myPick = b.getAttribute('data-my'); render(); };
+    });
+    cont.querySelectorAll('[data-opp]').forEach(b => {
+      b.onclick = () => { oppPick = b.getAttribute('data-opp'); render(); };
+    });
+
+    document.getElementById('tpGo').onclick = () => {
+      // Сохраняем выбор
+      if(myPick === 'manual'){
+        team1 = 'manual';
+        teamGreen = [];
+      } else {
+        team1 = getTeamById(myPick);
+        try { localStorage.setItem('ib_team1', myPick); } catch(e){}
+        teamGreen = (team1.lineups[gameMode] || []).slice();
+      }
+
+      if(oppPick === 'manual'){
+        team2 = 'manual';
+        teamRed = [];
+      } else {
+        team2 = getTeamById(oppPick);
+        try { localStorage.setItem('ib_team2', oppPick); } catch(e){}
+        teamRed = (team2.lineups[gameMode] || []).slice();
+      }
+
+      pickingTeam = teamGreen.length >= need ? 1 : 0;
+
+      if(afterDone) afterDone();
+    };
+
+    document.getElementById('tpCancel').onclick = () => {
+      if(afterCancel) afterCancel();
+    };
+  }
+
+  render();
+};
+/* ============================================================
+   ЧАСТЬ 10a-5: ПРОФИЛЬ
+   ============================================================ */
+
+showProfile = function(){
+  showScreen('scrProfile');
+
+  // Аватары
+  const avsCont = document.getElementById('pfAvatars');
+  avsCont.innerHTML = '';
+  AVATARS.forEach(a => {
+    const b = document.createElement('button');
+    b.className = 'avatar-btn' + (a === profile.avatar ? ' sel' : '');
+    b.textContent = a;
+    b.onclick = () => {
+      profile.avatar = a;
+      document.getElementById('pfAvatarBig').textContent = a;
+      avsCont.querySelectorAll('.avatar-btn').forEach(x =>
+        x.classList.toggle('sel', x === b)
+      );
+    };
+    avsCont.appendChild(b);
+  });
+
+  document.getElementById('pfAvatarBig').textContent = profile.avatar;
+  document.getElementById('pfName').value = profile.name;
+
+  // Статистика
+  const stats = document.getElementById('pfStats');
+  const winRate = profile.games > 0
+    ? Math.round(profile.wins / profile.games * 100)
+    : 0;
+  stats.innerHTML =
+    '<div style="display:flex;justify-content:space-between;margin:4px 0">' +
+    '<span style="color:#94a3b8">🎮 Матчей:</span><b>' + profile.games + '</b></div>' +
+    '<div style="display:flex;justify-content:space-between;margin:4px 0">' +
+    '<span style="color:#94a3b8">🏆 Побед:</span><b>' + profile.wins + '</b></div>' +
+    '<div style="display:flex;justify-content:space-between;margin:4px 0">' +
+    '<span style="color:#94a3b8">📈 Процент:</span><b>' + winRate + '%</b></div>';
+
+  // История матчей
+  const hist = document.getElementById('pfHistory');
+  let matches = [];
+  try {
+    const raw = localStorage.getItem('ib_matches');
+    if(raw) matches = JSON.parse(raw);
+  } catch(e){}
+
+  if(matches.length){
+    let h = '<div style="font-weight:bold;color:#fbbf24;margin-bottom:8px">📜 История матчей</div>';
+    matches.slice(0, 5).forEach(m => {
+      const color = m.win ? '#22c55e' : '#ef4444';
+      const icon = m.win ? '🏆' : '💔';
+      h += '<div class="msg-item">';
+      h += '<span style="font-size:16px">' + icon + '</span>';
+      h += '<div style="flex:1;min-width:0">';
+      h += '<div style="font-weight:bold;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">';
+      h += m.myTeam + ' vs ' + m.oppTeam;
+      h += '</div>';
+      h += '<div style="color:#94a3b8;font-size:10px">' + m.mode + '</div>';
+      h += '</div>';
+      h += '<span style="color:' + color + ';font-weight:bold">' + m.myScore + ':' + m.oppScore + '</span>';
+      h += '</div>';
+    });
+    hist.innerHTML = h;
+  } else {
+    hist.innerHTML = '<div style="color:#64748b;text-align:center">Пока нет матчей</div>';
+  }
+};
+
+document.getElementById('mProfile').onclick = showProfile;
+
+document.getElementById('pfSave').onclick = () => {
+  const n = document.getElementById('pfName').value.trim();
+  if(n) profile.name = n;
+  saveProfile();
+  const btn = document.getElementById('pfSave');
+  btn.textContent = '✅ Сохранено';
+  setTimeout(() => { btn.textContent = '💾 Сохранить'; }, 1000);
+};
+
+document.getElementById('pfClose').onclick = () => showMain();
+
+// Автозапрос имени при первом запуске
+setTimeout(() => {
+  if(!profile.name) showProfile();
+}, 800);
+
+// ===== ЗАПИСЬ МАТЧА В ИСТОРИЮ =====
+function saveMatchToHistory(myScore, oppScore){
+  const myTeamName = (team1 && team1 !== 'manual') ? team1.name : 'Вручную';
+  const oppTeamName = (team2 && team2 !== 'manual') ? team2.name : 'Вручную';
+  const win = myScore > oppScore;
+
+  let matches = [];
+  try {
+    const raw = localStorage.getItem('ib_matches');
+    if(raw) matches = JSON.parse(raw);
+  } catch(e){}
+
+  matches.unshift({
+    date: Date.now(),
+    myScore, oppScore,
+    myTeam: myTeamName,
+    oppTeam: oppTeamName,
+    mode: gameMode,
+    win
+  });
+  if(matches.length > 30) matches.length = 30;
+
+  try { localStorage.setItem('ib_matches', JSON.stringify(matches)); } catch(e){}
+
+  // Обновляем профиль
+  profile.games++;
+  if(win) profile.wins++;
+  saveProfile();
+}
+
+// Перехват end — фиксируем конец матча
+const _end10a5 = end;
+end = function(){
+  const wasOver = over;
+  _end10a5();
+  if(over && !wasOver){
+    saveMatchToHistory(sc[0], sc[1]);
+    logMsg('📊 Матч сохранён в историю');
+  }
+};
+
 </script>
 </body>
 </html>
