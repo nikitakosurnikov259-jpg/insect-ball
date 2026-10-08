@@ -6382,6 +6382,219 @@ showTeamEditor = function(teamId){
 
 console.log('✅ Пулы по позициям: PG, SG, SF, PF, C');
 logMsg('✨ Фигуры сгруппированы по позициям');
+/* ============================================================
+   ПАТЧ-МОЛОТ: ГРУППИРОВКА ФИГУР ПО ПОЗИЦИЯМ
+   Работает независимо от других патчей
+   ============================================================ */
+
+var POS_TITLES = {
+  PG: 'Раз.\u044b\u0433\u0440\u044b\u0432\u0430\u044e\u0449\u0438\u0435',
+  SG: 'Атакующие',
+  SF: 'Лёгкие форварды',
+  PF: 'Тяжёлые форварды',
+  C:  'Центровые'
+};
+var POS_COLORS = {
+  PG: '#3b82f6',
+  SG: '#f59e0b',
+  SF: '#22c55e',
+  PF: '#ef4444',
+  C:  '#a855f7'
+};
+
+// Группируем фигуры
+function getFigGroups(){
+  var g = {PG:[], SG:[], SF:[], PF:[], C:[]};
+  Object.keys(F).forEach(function(n){
+    var pos = F[n].p;
+    if(g[pos]) g[pos].push(n);
+  });
+  return g;
+}
+
+// Проверка: пул уже сгруппирован?
+function isPoolGrouped(pool){
+  var children = pool.children;
+  for(var i = 0; i < children.length; i++){
+    var t = children[i].textContent || '';
+    if(t.indexOf('Разыгрывающие') >= 0 || t.indexOf('Атакующие') >= 0 ||
+       t.indexOf('Лёгкие форварды') >= 0 || t.indexOf('Тяжёлые форварды') >= 0 ||
+       t.indexOf('Центровые') >= 0){
+      return true;
+    }
+  }
+  return false;
+}
+
+// Принудительная группировка
+function forceGroupPool(){
+  var pool = document.getElementById('pool');
+  if(!pool) return;
+
+  // Если в пуле нет кнопок — нечего делать
+  if(pool.querySelectorAll('button').length === 0) return;
+
+  // Если уже сгруппировано — ок
+  if(isPoolGrouped(pool)) return;
+
+  // Собираем ВСЕ имена фигур из существующих кнопок
+  var buttons = pool.querySelectorAll('button');
+  var existingNames = [];
+  Array.prototype.forEach.call(buttons, function(b){
+    var txt = b.textContent || '';
+    // Убираем эмодзи и префикс
+    var match = txt.match(/[A-ZА-Я][A-ZА-Яa-zа-яё. ]+/);
+    var name = null;
+    Object.keys(F).forEach(function(fn){
+      if(txt.indexOf(fn) >= 0){
+        name = fn;
+      }
+    });
+    if(name && existingNames.indexOf(name) < 0){
+      existingNames.push(name);
+    }
+  });
+
+  if(!existingNames.length) return;
+
+  // Собираем текущее состояние команд
+  var need = (MODE_PRESETS[gameMode] || MODE_PRESETS['5v5']).count;
+  var isAI = aiEnabled;
+  var usedSet = {};
+  teamGreen.forEach(function(n){ usedSet[n] = true; });
+  teamRed.forEach(function(n){ usedSet[n] = true; });
+
+  // Группы
+  var groups = getFigGroups();
+
+  // Очищаем pool
+  pool.innerHTML = '';
+  pool.style.cssText = 'display:flex;flex-direction:column;gap:2px;margin:8px 0;max-width:500px;width:100%';
+
+  ['PG','SG','SF','PF','C'].forEach(function(pos){
+    if(!groups[pos].length) return;
+
+    // Заголовок
+    var header = document.createElement('div');
+    header.style.cssText = 'display:flex;align-items:center;gap:6px;margin:8px 0 4px';
+    header.innerHTML =
+      '<span style="background:' + POS_COLORS[pos] + ';color:#fff;padding:3px 10px;border-radius:6px;font-size:12px;font-weight:bold">' + pos + '</span>' +
+      '<span style="color:#94a3b8;font-size:11px">' + POS_TITLES[pos] + '</span>';
+    pool.appendChild(header);
+
+    // Ряд
+    var row = document.createElement('div');
+    row.style.cssText = 'display:flex;flex-wrap:wrap;gap:3px;width:100%;margin-bottom:6px';
+
+    groups[pos].forEach(function(n){
+      var used = !!usedSet[n];
+      var b = document.createElement('button');
+      b.textContent = (ICONS[n] || '🐜') + ' ' + n;
+      b.disabled = used;
+      b.style.cssText =
+        'padding:6px 10px;background:' + POS_COLORS[pos] + ';color:#fff;border:0;' +
+        'border-radius:5px;font-size:11px;cursor:pointer;font-family:inherit;' +
+        'opacity:' + (used ? '0.25' : '1');
+      b.onclick = function(){
+        if(pickingTeam === 0 && teamGreen.length < need){
+          teamGreen.push(n);
+          if(teamGreen.length >= need && !isAI) pickingTeam = 1;
+        } else if(!isAI && pickingTeam === 1 && teamRed.length < need){
+          teamRed.push(n);
+        }
+        // Вызываем стандартный renderPool — он перерисует и группировку сделает наш молот
+        if(typeof renderPool === 'function') renderPool();
+        if(typeof updateSetupButtons === 'function') updateSetupButtons();
+      };
+      row.appendChild(b);
+    });
+
+    pool.appendChild(row);
+  });
+}
+
+// ===== СЛЕЖКА: как только pool появился / обновился — группируем =====
+setInterval(forceGroupPool, 400);
+
+// Наблюдаем за изменениями DOM в pool
+setTimeout(function(){
+  var pool = document.getElementById('pool');
+  if(!pool || !window.MutationObserver) return;
+  var observer = new MutationObserver(function(){
+    setTimeout(forceGroupPool, 50);
+  });
+  observer.observe(pool, {childList: true});
+}, 1000);
+
+/* ============================================================
+   ТО ЖЕ САМОЕ ДЛЯ ОНЛАЙН-ПИКА
+   ============================================================ */
+
+function forceGroupOnlinePool(){
+  var div = document.getElementById('onlinePickScr');
+  if(!div) return;
+  var poolEl = div.querySelector('#osPool');
+  if(!poolEl) return;
+
+  if(poolEl.querySelectorAll('button').length === 0) return;
+  if(isPoolGrouped(poolEl)) return;
+
+  var need = (MODE_PRESETS[gameMode] || MODE_PRESETS['5v5']).count;
+  var groups = getFigGroups();
+
+  poolEl.innerHTML = '';
+  poolEl.style.cssText = 'display:flex;flex-direction:column;gap:2px;margin-bottom:14px';
+
+  ['PG','SG','SF','PF','C'].forEach(function(pos){
+    if(!groups[pos].length) return;
+
+    var header = document.createElement('div');
+    header.style.cssText = 'display:flex;align-items:center;gap:6px;margin:8px 0 4px';
+    header.innerHTML =
+      '<span style="background:' + POS_COLORS[pos] + ';color:#fff;padding:3px 10px;border-radius:6px;font-size:12px;font-weight:bold">' + pos + '</span>' +
+      '<span style="color:#94a3b8;font-size:11px">' + POS_TITLES[pos] + '</span>';
+    poolEl.appendChild(header);
+
+    var row = document.createElement('div');
+    row.style.cssText = 'display:flex;flex-wrap:wrap;gap:3px;width:100%;margin-bottom:6px';
+
+    groups[pos].forEach(function(n){
+      var used = onlineMyPicks.indexOf(n) >= 0;
+      var b = document.createElement('button');
+      b.textContent = (ICONS[n] || '🐜') + ' ' + n;
+      b.disabled = used || onlineMyReady;
+      b.style.cssText =
+        'padding:6px 10px;background:' + POS_COLORS[pos] + ';color:#fff;border:0;' +
+        'border-radius:5px;font-size:11px;cursor:pointer;font-family:inherit;' +
+        'opacity:' + (used ? '0.25' : '1');
+      b.onclick = function(){
+        if(onlineMyReady) return;
+        if(onlineMyPicks.length >= need) return;
+        onlineMyPicks.push(n);
+        if(typeof renderOnlinePick === 'function') renderOnlinePick();
+      };
+      row.appendChild(b);
+    });
+
+    poolEl.appendChild(row);
+  });
+}
+
+setInterval(forceGroupOnlinePool, 400);
+
+setTimeout(function(){
+  var div = document.getElementById('onlinePickScr');
+  if(!div) return;
+  var poolEl = div.querySelector('#osPool');
+  if(!poolEl || !window.MutationObserver) return;
+  var observer = new MutationObserver(function(){
+    setTimeout(forceGroupOnlinePool, 50);
+  });
+  observer.observe(poolEl, {childList: true});
+}, 1000);
+
+console.log('✅ Патч-молот: группировка по позициям активна');
+logMsg('🎨 Группировка фигур по позициям');
 
 </script>
 </body>
