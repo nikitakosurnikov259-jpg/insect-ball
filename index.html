@@ -6314,10 +6314,6 @@ logMsg('✅ Раунды переключаются корректно');
 /* ============================================================
    СУПЕР-ИИ — ЧАСТЬ 1/2
    ============================================================ */
-
-const aiSleep = ms => new Promise(r => setTimeout(r, ms));
-const aiChance = p => Math.random() < p;
-
 function aiLevel(){
   if(aiDifficulty === 'hard')
     return {smart: 1.0, pass: 0.9, dribble: 0.95, abilities: 1.0, defense: 1.0, team: 0.85};
