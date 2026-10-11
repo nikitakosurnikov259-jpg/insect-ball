@@ -7067,6 +7067,1025 @@ playAllAI = async function(){
 console.log('✅ Супер-ИИ загружен');
 console.log('🔴 Сложный = все тактики: дриблинг, способности, командные, опека, давление');
 logMsg('🧠 Супер-ИИ готов');
+/* ============================================================
+   ПАТЧ: РАССТАНОВКА АТАКА/ЗАЩИТА (Hoop League стиль)
+   ============================================================ */
+
+var FORMATIONS = {
+  '5v5': {
+    // Зелёные атакуют ВВЕРХ (к кольцу r=0)
+    greenAttack: [[4,4],[6,2],[2,2],[5,3],[3,2]],
+    redDefendUp: [[4,3],[6,1],[2,1],[5,2],[3,1]],
+    // Красные атакуют ВНИЗ (к кольцу r=11)
+    redAttack: [[4,7],[6,9],[2,9],[5,8],[3,9]],
+    greenDefendDown: [[4,8],[6,10],[2,10],[5,9],[3,10]]
+  },
+  '3v3': {
+    greenAttack: [[4,4],[6,2],[2,2]],
+    redDefendUp: [[4,3],[6,1],[2,1]],
+    redAttack: [[4,7],[6,9],[2,9]],
+    greenDefendDown: [[4,8],[6,10],[2,10]]
+  },
+  '1v1': {
+    // В 1v1 оба снизу
+    greenAttack: [[4,9]],
+    redDefendUp: [[4,7]],
+    redAttack: [[4,9]],
+    greenDefendDown: [[4,7]]
+  }
+};
+
+function getTeamPositions(teamIdx, attacking, swap){
+  var f = FORMATIONS[gameMode] || FORMATIONS['5v5'];
+  var positions;
+
+  if(teamIdx === 0){
+    positions = attacking ? f.greenAttack : f.greenDefendDown;
+  } else {
+    positions = attacking ? f.redAttack : f.redDefendUp;
+  }
+
+  if(!swap){
+    return positions.map(function(p){ return [p[0], ROWS - 1 - p[1]]; });
+  }
+  return positions;
+}
+
+function applyFormation(ballOwnerTeam){
+  var swap = true;
+  try {
+    var s = localStorage.getItem('ib_greenBottom');
+    swap = (s === null) ? true : (s === '1');
+  } catch(e){}
+
+  var greenAttacking = ballOwnerTeam === 0;
+  var greenPos = getTeamPositions(0, greenAttacking, swap);
+  var redPos = getTeamPositions(1, !greenAttacking, swap);
+
+  var greenFig = fig.filter(function(f){ return f.t === 0; });
+  var redFig = fig.filter(function(f){ return f.t === 1; });
+
+  greenFig.forEach(function(f, i){
+    if(greenPos[i]){
+      f.c = greenPos[i][0];
+      f.r = greenPos[i][1];
+      f.px = undefined;
+      f.py = undefined;
+      f._animating = false;
+    }
+  });
+
+  redFig.forEach(function(f, i){
+    if(redPos[i]){
+      f.c = redPos[i][0];
+      f.r = redPos[i][1];
+      f.px = undefined;
+      f.py = undefined;
+      f._animating = false;
+    }
+  });
+
+  pA = greenPos.slice();
+  pB = redPos.slice();
+  render();
+}
+
+// ===== Обёртка над initGame =====
+var _init_hoop = initGame;
+initGame = function(a, b){
+  _init_hoop(a, b);
+  var bh = byId(ball);
+  var ownerTeam = bh ? bh.t : 0;
+  applyFormation(ownerTeam);
+};
+
+// ===== Обёртка над resetPositions =====
+var _reset_hoop = resetPositions;
+resetPositions = function(scoringTeam){
+  var newOwner = 1 - scoringTeam;
+
+  // Сначала ставим формацию (обновляет pA/pB)
+  applyFormation(newOwner);
+
+  // Стандартный сброс
+  _reset_hoop(scoringTeam);
+
+  // Финальная перестановка на случай если сброс что-то сместил
+  setTimeout(function(){ applyFormation(newOwner); }, 30);
+};
+
+console.log('✅ Hoop League расстановка загружена');
+logMsg('🏀 Атака → на половине противника');
+/* ============================================================
+   ПАТЧ: НЕРФ ОТБОРА/ПЕРЕХВАТА + АВТО-ФОРМАЦИЯ
+   ============================================================ */
+
+// ===== 1. ЛИМИТ 2 ОТБОРА/ПЕРЕХВАТА ЗА ХОД =====
+var stealLimit = 2;
+var stealsThisTurn = {0: 0, 1: 0};
+
+function resetStealLimit(){
+  stealsThisTurn = {0: 0, 1: 0};
+}
+
+function canSteal(teamIdx){
+  return stealsThisTurn[teamIdx] < stealLimit;
+}
+
+// Сброс при смене хода
+var _switchTurn_steal = switchTurn;
+switchTurn = function(){
+  resetStealLimit();
+  _switchTurn_steal();
+};
+var _newRound_steal = newRound;
+newRound = function(){
+  resetStealLimit();
+  _newRound_steal();
+};
+var _initGame_steal = initGame;
+initGame = function(a, b){
+  _initGame_steal(a, b);
+  resetStealLimit();
+};
+
+// ===== 2. НЕРФ ОТБОРА =====
+var _doSteal_nerf = doSteal;
+doSteal = function(){
+  var f = byId(sel);
+  if(!f) return _doSteal_nerf();
+
+  // Лимит
+  if(!canSteal(f.t)){
+    logMsg('⏳ Лимит отборов исчерпан (2 за ход)');
+    return;
+  }
+
+  // Нерф: -2 к атаке отбора
+  var bh = byId(ball);
+  if(!bh || dist(f.c, f.r, bh.c, bh.r) !== 1) return _doSteal_nerf();
+  if(f.o < 1) return _doSteal_nerf();
+
+  // Ослепление
+  if(f.bl > 0){ logMsg('✦ Ослеплён'); return; }
+
+  f.o -= 1;
+  stealsThisTurn[f.t] = (stealsThisTurn[f.t] || 0) + 1;
+
+  var atk = f.z - 2 + Math.floor(Math.random()*6) + 1;
+  var def = bh.d + Math.floor(Math.random()*6) + 1 + (holds[bh.i] ? 2 : 0);
+  logMsg('🤚 Отбор ' + f.n + ' ' + atk + ' vs ' + bh.n + ' ' + def + ' [' + stealsThisTurn[f.t] + '/' + stealLimit + ']');
+
+  if(atk >= def){
+    ball = f.i;
+    delete holds[bh.i];
+    logMsg('✓ Мяч у ' + f.n);
+    popText('ОТБОР!', cen(f.c, f.r).x, cen(f.c, f.r).y - 25, '#22c55e', 18);
+    // Автосмена формации
+    setTimeout(function(){ if(typeof applyFormation === 'function') applyFormation(f.t); }, 300);
+  } else {
+    logMsg('✗ Не удалось');
+    if(atk <= def - 4){
+      f.fouls++;
+      logMsg('⚠ ФОЛ! ' + f.n + ' (' + f.fouls + '/5)');
+      if(f.fouls >= 5) sendToPenalty(f, 3);
+    }
+  }
+  if(f.o <= 0) end();
+  else { reHL(); ui(); draw(); }
+};
+
+// ===== 3. НЕРФ ПЕРЕХВАТА ПАСА =====
+var _doPass_nerf = doPass;
+doPass = function(targetId){
+  var f = byId(sel);
+  if(!f || ball !== f.i || f.o < 1) return _doPass_nerf(targetId);
+  var t = byId(targetId);
+  if(!t) return;
+
+  var hasCamou = (f.ab || []).some(function(a){ return a.tag === 'camouflage'; }) || f.camouflage;
+
+  if(!hasCamou){
+    var int = null, br = 0;
+    fig.forEach(function(g){
+      if(g.t === f.t || g.c < 0) return;
+      // Нерф: только вплотную (1 гекс) — было 1
+      var minD = Math.min(
+        dist(g.c, g.r, f.c, f.r),
+        dist(g.c, g.r, t.c, t.r)
+      );
+      if(minD > 1) return; // было 1, теперь тоже 1 — но шансы ниже
+      // Нерф бонуса: +1 вместо +2
+      var roll = g.z + Math.floor(Math.random()*6) + 1 + 1;
+      if(roll > br){ br = roll; int = g; }
+    });
+
+    if(int){
+      // Нерф: пасующий получает +3 (было без бонуса)
+      var pr = f.d + 3 + Math.floor(Math.random()*6) + 1;
+      logMsg('Перехват ' + int.n + ' ' + br + ' vs пас ' + pr);
+      if(br >= pr){
+        f.o -= 1;
+        ball = int.i;
+        delete holds[f.i];
+        logMsg('🚫 ПЕРЕХВАТ! ' + int.n);
+        mode = 'sel'; hl = [];
+        // Автосмена формации
+        setTimeout(function(){ if(typeof applyFormation === 'function') applyFormation(int.t); }, 300);
+        if(f.o <= 0) end();
+        else { reHL(); ui(); draw(); }
+        return;
+      }
+    }
+  } else {
+    f.camouflage = 0;
+  }
+
+  // Обычный пас
+  _doPass_nerf(targetId);
+};
+
+// ===== 4. АВТО-ФОРМАЦИЯ ПРИ СМЕНЕ ВЛАДЕЛЬЦА МЯЧА =====
+// Отслеживаем владельца мяча и мгновенно переставляем
+var _lastBallOwner = -1;
+
+setInterval(function(){
+  if(over) return;
+  if(typeof applyFormation !== 'function') return;
+  if(fig.length === 0) return;
+
+  var bh = byId(ball);
+  if(!bh) return;
+
+  if(bh.t !== _lastBallOwner){
+    _lastBallOwner = bh.t;
+    // Мгновенная перестановка — все на нужной половине
+    applyFormation(bh.t);
+    logMsg('🔄 ' + (bh.t === 0 ? '🟢 Атака Зелёных' : '🔴 Атака Красных'));
+  }
+}, 200);
+
+// ===== 5. ФИКС: ПРИ initGame сразу ставим формацию =====
+setTimeout(function(){
+  if(fig.length > 0 && typeof applyFormation === 'function'){
+    var bh = byId(ball);
+    if(bh) applyFormation(bh.t);
+  }
+}, 500);
+
+// ===== 6. ПОДБОР — обновляем формацию =====
+var _rebound_nerf = rebound;
+rebound = function(team){
+  _rebound_nerf(team);
+  var bh = byId(ball);
+  if(bh && typeof applyFormation === 'function'){
+    setTimeout(function(){ applyFormation(bh.t); }, 100);
+  }
+};
+
+console.log('✅ Нерф защиты + авто-формация');
+logMsg('🛡 Отбор: -2, лимит 2/ход · Перехват: слабее');
+/* ============================================================
+   ПАТЧ: ПЕРЕХВАТ + ПАС С ПОДТВЕРЖДЕНИЕМ + ОПАСНОСТЬ
+   ============================================================ */
+
+// ===== 1. ПЕРЕХВАТ КАК ОТДЕЛЬНЫЙ СТАТ =====
+function getSteal(f){
+  // Перехват = Защ - 1 (минимум 0)
+  return Math.max(0, f.z - 1);
+}
+
+// ===== 2. ОПАСНОСТЬ ПАСА =====
+var pendingPassId = null;
+var passDangerLevel = 0;
+
+function calcPassDanger(from, to){
+  var danger = 0;
+  fig.forEach(function(g){
+    if(g.t === from.t || g.c < 0) return;
+    var dFrom = dist(g.c, g.r, from.c, from.r);
+    var dTo = dist(g.c, g.r, to.c, to.r);
+    var midC = Math.round((from.c + to.c) / 2);
+    var midR = Math.round((from.r + to.r) / 2);
+    var dMid = dist(g.c, g.r, midC, midR);
+    var m = Math.min(dFrom, dTo, dMid);
+    if(m <= 1) danger += 3;
+    else if(m <= 2) danger += 1;
+  });
+  return danger;
+}
+
+function dangerColor(d){
+  if(d === 0) return '#22c55e';
+  if(d <= 2) return '#fbbf24';
+  return '#ef4444';
+}
+function dangerLabel(d){
+  if(d === 0) return '🟢 Безопасно';
+  if(d <= 2) return '🟡 Средне';
+  return '🔴 Опасно!';
+}
+
+// ===== 3. ПЕРЕХВАТ ЧЕРЕЗ getSteal (перезапись doPass) =====
+var _doPass_steal = doPass;
+doPass = function(targetId){
+  var f = byId(sel);
+  if(!f || ball !== f.i || f.o < 1) return _doPass_steal(targetId);
+  var t = byId(targetId);
+  if(!t) return;
+
+  var hasCamou = (f.ab || []).some(function(a){ return a.tag === 'camouflage'; }) || f.camouflage;
+
+  if(!hasCamou){
+    var int = null, br = 0;
+    fig.forEach(function(g){
+      if(g.t === f.t || g.c < 0) return;
+      var minD = Math.min(
+        dist(g.c, g.r, f.c, f.r),
+        dist(g.c, g.r, t.c, t.r)
+      );
+      if(minD > 1) return;
+      // Используем ПЕРЕХВАТ (не Защ)
+      var roll = getSteal(g) + Math.floor(Math.random()*6) + 1 + 1;
+      if(roll > br){ br = roll; int = g; }
+    });
+
+    if(int){
+      var pr = f.d + 3 + Math.floor(Math.random()*6) + 1;
+      logMsg('Перехват ' + int.n + ' (пер:' + getSteal(int) + ') ' + br + ' vs пас ' + pr);
+      if(br >= pr){
+        f.o -= 1;
+        ball = int.i;
+        delete holds[f.i];
+        logMsg('🚫 ПЕРЕХВАТ! ' + int.n);
+        mode = 'sel'; hl = [];
+        pendingPassId = null;
+        if(typeof applyFormation === 'function') setTimeout(function(){ applyFormation(int.t); }, 300);
+        if(f.o <= 0) end();
+        else { reHL(); ui(); draw(); }
+        return;
+      }
+    }
+  } else {
+    f.camouflage = 0;
+  }
+
+  _doPass_steal(targetId);
+};
+
+// ===== 4. ПАС С ПОДТВЕРЖДЕНИЕМ =====
+var _hmc_passConfirm = handleModeClick;
+handleModeClick = function(col, row){
+  if(mode === 'pass'){
+    var f = byId(sel);
+    if(!f) return;
+
+    var h = hl.find(function(hh){ return hh.c === col && hh.r === row; });
+
+    // Клик мимо — отмена
+    if(!h || h.id === undefined){
+      pendingPassId = null;
+      mode = 'sel'; hl = []; reHL(); ui(); draw();
+      return;
+    }
+
+    // Повторный клик на того же — пас!
+    if(pendingPassId === h.id){
+      var tid = h.id;
+      pendingPassId = null;
+      passDangerLevel = 0;
+      doPass(tid);
+      return;
+    }
+
+    // Первый клик — выбор цели + опасность
+    pendingPassId = h.id;
+    var target = byId(h.id);
+    if(target){
+      passDangerLevel = calcPassDanger(f, target);
+      logMsg('📊 Пас ' + f.n + ' → ' + target.n + ': ' + dangerLabel(passDangerLevel));
+      popText(dangerLabel(passDangerLevel), cen(target.c, target.r).x, cen(target.c, target.r).y - 40, dangerColor(passDangerLevel), 15);
+    }
+    ui(); draw();
+    return;
+  }
+  return _hmc_passConfirm(col, row);
+};
+
+// ===== 5. UI: ПАНЕЛЬ ОПАСНОСТИ =====
+var _ui_passConfirm = ui;
+ui = function(){
+  _ui_passConfirm();
+
+  if(mode !== 'pass') return;
+  if(sel === null) return;
+  if(pendingPassId === null) return;
+
+  var f = byId(sel);
+  var target = byId(pendingPassId);
+  if(!f || !target) return;
+
+  var act = document.getElementById('act');
+  if(!act) return;
+
+  var bar = act.querySelector('.passBar');
+  if(bar) bar.remove();
+
+  var info = document.createElement('div');
+  info.className = 'passBar';
+  info.style.cssText = 'width:100%;margin-bottom:6px;padding:8px;border-radius:6px;background:' + dangerColor(passDangerLevel) + '20;border:2px solid ' + dangerColor(passDangerLevel) + ';color:#fff;font-size:12px;text-align:center';
+  info.innerHTML =
+    '<b>' + target.n + '</b>: <span style="color:' + dangerColor(passDangerLevel) + ';font-weight:bold">' + dangerLabel(passDangerLevel) + '</span>' +
+    '<div style="color:#94a3b8;font-size:10px;margin-top:2px">Тапни ещё раз на цель → пас</div>';
+  act.insertBefore(info, act.firstChild);
+};
+
+// ===== 6. ВИЗУАЛИЗАЦИЯ ЛИНИИ ПАСА =====
+var _render_passLine = render;
+render = function(){
+  _render_passLine();
+
+  if(mode !== 'pass') return;
+  if(pendingPassId === null) return;
+  if(sel === null) return;
+
+  var f = byId(sel);
+  var t = byId(pendingPassId);
+  if(!f || !t) return;
+
+  var fp = cen(f.c, f.r);
+  var tp = cen(t.c, t.r);
+
+  // Линия
+  ctx.beginPath();
+  ctx.moveTo(fp.x, fp.y);
+  ctx.lineTo(tp.x, tp.y);
+  ctx.strokeStyle = dangerColor(passDangerLevel);
+  ctx.lineWidth = 3;
+  ctx.setLineDash([8, 5]);
+  ctx.stroke();
+  ctx.setLineDash([]);
+
+  // Иконка над целью
+  ctx.font = 'bold 22px sans-serif';
+  ctx.textAlign = 'center';
+  ctx.textBaseline = 'middle';
+  ctx.fillStyle = dangerColor(passDangerLevel);
+  ctx.fillText('⚠', tp.x, tp.y - S * 1.15);
+};
+
+// ===== 7. НОВАЯ ФОРМАЦИЯ (больше места в 5v5) =====
+var FORMATIONS_NEW = {
+  '5v5': {
+    // Зелёные атакуют ВВЕРХ (r=0)
+    greenAttack: [[4,3],[7,2],[1,2],[6,5],[2,5]],
+    redDefendUp: [[4,1],[6,1],[2,1],[7,4],[1,4]],
+    // Красные атакуют ВНИЗ (r=11)
+    redAttack: [[4,8],[7,9],[1,9],[6,6],[2,6]],
+    greenDefendDown: [[4,10],[6,10],[2,10],[7,7],[1,7]]
+  },
+  '3v3': {
+    greenAttack: [[4,4],[6,2],[2,2]],
+    redDefendUp: [[4,1],[6,3],[2,3]],
+    redAttack: [[4,7],[6,9],[2,9]],
+    greenDefendDown: [[4,10],[6,8],[2,8]]
+  },
+  '1v1': {
+    greenAttack: [[4,9]],
+    redDefendUp: [[4,7]],
+    redAttack: [[4,9]],
+    greenDefendDown: [[4,7]]
+  }
+};
+
+applyFormation = function(ballOwnerTeam){
+  var swap = true;
+  try {
+    var s = localStorage.getItem('ib_greenBottom');
+    swap = (s === null) ? true : (s === '1');
+  } catch(e){}
+
+  var fset = FORMATIONS_NEW[gameMode] || FORMATIONS_NEW['5v5'];
+  var greenPos, redPos;
+
+  if(ballOwnerTeam === 0){
+    greenPos = fset.greenAttack;
+    redPos = fset.redDefendUp;
+  } else {
+    greenPos = fset.greenDefendDown;
+    redPos = fset.redAttack;
+  }
+
+  if(!swap){
+    greenPos = greenPos.map(function(p){ return [p[0], ROWS - 1 - p[1]]; });
+    redPos = redPos.map(function(p){ return [p[0], ROWS - 1 - p[1]]; });
+  }
+
+  var greenFig = fig.filter(function(x){ return x.t === 0; });
+  var redFig = fig.filter(function(x){ return x.t === 1; });
+
+  greenFig.forEach(function(fg, i){
+    if(greenPos[i]){
+      fg.c = greenPos[i][0]; fg.r = greenPos[i][1];
+      fg.px = undefined; fg.py = undefined;
+    }
+  });
+  redFig.forEach(function(fg, i){
+    if(redPos[i]){
+      fg.c = redPos[i][0]; fg.r = redPos[i][1];
+      fg.px = undefined; fg.py = undefined;
+    }
+  });
+
+  pA = greenPos.slice();
+  pB = redPos.slice();
+  render();
+};
+
+console.log('✅ Перехват + Подтверждение паса + Опасность + Новая формация');
+logMsg('📊 Перехват отдельно · Пас с подтверждением');
+/* ============================================================
+   ПАТЧ: ОТБОР 2/ФИГУРА + ФОРМАЦИЯ HOOP LEAGUE
+   ============================================================ */
+
+// ===== 1. ОТБОР 2 РАЗА ЗА ХОД НА ФИГУРУ =====
+var STEAL_LIMIT = 2;
+
+function getStealCount(f){
+  if(f.stealsThisTurn === undefined) f.stealsThisTurn = 0;
+  return f.stealsThisTurn;
+}
+
+function resetStealsAll(){
+  fig.forEach(function(f){ f.stealsThisTurn = 0; });
+}
+
+// Обёртка над doSteal
+var _doSteal_lim = doSteal;
+doSteal = function(){
+  var f = byId(sel);
+  if(!f) return _doSteal_lim();
+
+  // Проверка лимита
+  if(getStealCount(f) >= STEAL_LIMIT){
+    logMsg('⏳ ' + f.n + ': лимит отбора (' + STEAL_LIMIT + ' за ход)');
+    return;
+  }
+
+  // Проверяем что отбор возможен
+  var bh = byId(ball);
+  if(!bh || bh.t === f.t || f.o < 1) return _doSteal_lim();
+  if(dist(f.c, f.r, bh.c, bh.r) !== 1) return _doSteal_lim();
+
+  // Считаем попытку
+  f.stealsThisTurn = getStealCount(f) + 1;
+
+  // Вызываем оригинал
+  _doSteal_lim();
+
+  // Логируем счётчик
+  logMsg('📊 ' + f.n + ': отборов ' + f.stealsThisTurn + '/' + STEAL_LIMIT);
+};
+
+// ===== 2. ФОРМАЦИЯ "ПТИЧЬЯ ЛАПА" (Hoop League) =====
+var HOOP_FORMATIONS = {
+  '5v5': {
+    greenAttack:     [[4,4],[1,3],[7,3],[0,2],[8,2]],
+    greenDefendDown: [[4,8],[2,9],[6,9],[1,10],[7,10]],
+    redAttack:       [[4,7],[1,8],[7,8],[0,9],[8,9]],
+    redDefendUp:     [[4,2],[2,2],[6,2],[1,1],[7,1]]
+  },
+  '3v3': {
+    greenAttack:     [[4,4],[1,3],[7,3]],
+    greenDefendDown: [[4,8],[2,9],[6,9]],
+    redAttack:       [[4,7],[1,8],[7,8]],
+    redDefendUp:     [[4,2],[2,2],[6,2]]
+  },
+  '1v1': {
+    greenAttack:     [[4,7]],
+    greenDefendDown: [[4,9]],
+    redAttack:       [[4,7]],
+    redDefendUp:     [[4,9]]
+  }
+};
+
+applyFormation = function(ballOwnerTeam){
+  var swap = true;
+  try {
+    var s = localStorage.getItem('ib_greenBottom');
+    swap = (s === null) ? true : (s === '1');
+  } catch(e){}
+
+  var fset = HOOP_FORMATIONS[gameMode] || HOOP_FORMATIONS['5v5'];
+
+  var greenPos, redPos;
+  if(ballOwnerTeam === 0){
+    greenPos = fset.greenAttack;
+    redPos   = fset.redDefendUp;
+  } else {
+    greenPos = fset.greenDefendDown;
+    redPos   = fset.redAttack;
+  }
+
+  // Зеркалим если нужно
+  if(!swap){
+    greenPos = greenPos.map(function(p){ return [p[0], ROWS - 1 - p[1]]; });
+    redPos   = redPos.map(function(p){ return [p[0], ROWS - 1 - p[1]]; });
+  }
+
+  var greenFig = fig.filter(function(x){ return x.t === 0; });
+  var redFig   = fig.filter(function(x){ return x.t === 1; });
+
+  greenFig.forEach(function(fg, i){
+    if(greenPos[i]){
+      fg.c = greenPos[i][0];
+      fg.r = greenPos[i][1];
+      fg.px = undefined;
+      fg.py = undefined;
+      fg._animating = false;
+    }
+  });
+
+  redFig.forEach(function(fg, i){
+    if(redPos[i]){
+      fg.c = redPos[i][0];
+      fg.r = redPos[i][1];
+      fg.px = undefined;
+      fg.py = undefined;
+      fg._animating = false;
+    }
+  });
+
+  pA = greenPos.slice();
+  pB = redPos.slice();
+  render();
+};
+
+// ===== 3. СБРОС СЧЁТЧИКОВ ПРИ СМЕНЕ ХОДА =====
+var _switchTurn_lim = switchTurn;
+switchTurn = function(){
+  resetStealsAll();
+  _switchTurn_lim();
+};
+
+var _newRound_lim = newRound;
+newRound = function(){
+  resetStealsAll();
+  _newRound_lim();
+};
+
+var _initGame_lim = initGame;
+initGame = function(a, b){
+  _initGame_lim(a, b);
+  resetStealsAll();
+  // Сразу применяем формацию
+  var bh = byId(ball);
+  if(bh && typeof applyFormation === 'function'){
+    setTimeout(function(){ applyFormation(bh.t); }, 50);
+  }
+};
+
+// ===== 4. ПРИМЕНЕНИЕ ФОРМАЦИИ ПРИ СМЕНЕ ВЛАДЕЛЬЦА =====
+var _lastOwner_formation = -1;
+setInterval(function(){
+  if(over) return;
+  if(fig.length === 0) return;
+  if(typeof applyFormation !== 'function') return;
+
+  var bh = byId(ball);
+  if(!bh) return;
+
+  if(bh.t !== _lastOwner_formation){
+    _lastOwner_formation = bh.t;
+    applyFormation(bh.t);
+    logMsg('🔄 ' + (bh.t === 0 ? '🟢 Атака Зелёных' : '🔴 Атака Красных'));
+  }
+}, 250);
+
+// ===== 5. ПОСЛЕ ГОЛА / СБРОСА =====
+var _reset_formation = resetPositions;
+resetPositions = function(scoringTeam){
+  _reset_formation(scoringTeam);
+  var bh = byId(ball);
+  if(bh){
+    setTimeout(function(){ applyFormation(bh.t); }, 50);
+  }
+};
+
+// ===== 6. ПОСЛЕ ПОДБОРА / ПЕРЕХВАТА =====
+var _rebound_formation = rebound;
+rebound = function(team){
+  _rebound_formation(team);
+  var bh = byId(ball);
+  if(bh) setTimeout(function(){ applyFormation(bh.t); }, 100);
+};
+
+console.log('✅ Отбор 2/фигура + Формация "птичья лапа"');
+logMsg('🏀 Расстановка: 1 вершина · 2 крыла · 2 угла');
+/* ============================================================
+   ПАТЧ: Таблица вправо + Формация к центру
+   ============================================================ */
+
+// ===== 1. ТАБЛИЦА ФИГУРЫ — ПРАВЫЙ ВЕРХНИЙ УГОЛ =====
+(function fixFigInfoPosition(){
+  var info = document.getElementById('figInfo');
+  if(!info) return;
+  info.style.top = '8px';
+  info.style.right = '8px';
+  info.style.left = 'auto';
+  info.style.maxWidth = '180px';
+  info.style.fontSize = '10px';
+  info.style.opacity = '0.95';
+})();
+
+// Переустанавливаем позицию на всякий случай каждый раз
+var _ui_figInfo = ui;
+ui = function(){
+  _ui_figInfo();
+  var info = document.getElementById('figInfo');
+  if(info){
+    info.style.top = '8px';
+    info.style.right = '8px';
+    info.style.left = 'auto';
+    info.style.maxWidth = '180px';
+  }
+};
+
+// ===== 2. ФОРМАЦИЯ — КРЫЛЬЯ БЛИЖЕ К РАЗЫГРЫВАЮЩЕМУ =====
+var HOOP_FORMATIONS = {
+  '5v5': {
+    // Зелёные атакуют ВВЕРХ (к кольцу r=0)
+    // PG на дуге · SG/SF крылья 45° · PF/C углы 0°
+    greenAttack:     [[4,5],[2,4],[6,4],[1,6],[7,6]],
+    // Красные защищают ВВЕРХ — напротив атакующих
+    redDefendUp:     [[4,2],[2,2],[6,2],[1,3],[7,3]],
+    // Красные атакуют ВНИЗ (зеркально)
+    redAttack:       [[4,6],[2,7],[6,7],[1,5],[7,5]],
+    // Зелёные защищают ВНИЗ — напротив красных
+    greenDefendDown: [[4,9],[2,9],[6,9],[1,8],[7,8]]
+  },
+  '3v3': {
+    greenAttack:     [[4,5],[2,4],[6,4]],
+    redDefendUp:     [[4,2],[2,2],[6,2]],
+    redAttack:       [[4,6],[2,7],[6,7]],
+    greenDefendDown: [[4,9],[2,9],[6,9]]
+  },
+  '1v1': {
+    greenAttack:     [[4,6]],
+    redDefendUp:     [[4,3]],
+    redAttack:       [[4,6]],
+    greenDefendDown: [[4,9]]
+  }
+};
+
+applyFormation = function(ballOwnerTeam){
+  var swap = true;
+  try {
+    var s = localStorage.getItem('ib_greenBottom');
+    swap = (s === null) ? true : (s === '1');
+  } catch(e){}
+
+  var fset = HOOP_FORMATIONS[gameMode] || HOOP_FORMATIONS['5v5'];
+
+  var greenPos, redPos;
+  if(ballOwnerTeam === 0){
+    greenPos = fset.greenAttack;
+    redPos   = fset.redDefendUp;
+  } else {
+    greenPos = fset.greenDefendDown;
+    redPos   = fset.redAttack;
+  }
+
+  // Зеркалим если надо
+  if(!swap){
+    greenPos = greenPos.map(function(p){ return [p[0], ROWS - 1 - p[1]]; });
+    redPos   = redPos.map(function(p){ return [p[0], ROWS - 1 - p[1]]; });
+  }
+
+  var greenFig = fig.filter(function(x){ return x.t === 0; });
+  var redFig   = fig.filter(function(x){ return x.t === 1; });
+
+  greenFig.forEach(function(fg, i){
+    if(greenPos[i]){
+      fg.c = greenPos[i][0]; fg.r = greenPos[i][1];
+      fg.px = undefined; fg.py = undefined;
+      fg._animating = false;
+    }
+  });
+
+  redFig.forEach(function(fg, i){
+    if(redPos[i]){
+      fg.c = redPos[i][0]; fg.r = redPos[i][1];
+      fg.px = undefined; fg.py = undefined;
+      fg._animating = false;
+    }
+  });
+
+  pA = greenPos.slice();
+  pB = redPos.slice();
+  render();
+};
+
+// При старте — применить формацию
+setTimeout(function(){
+  if(fig.length > 0){
+    var bh = byId(ball);
+    if(bh) applyFormation(bh.t);
+  }
+}, 300);
+
+console.log('✅ Таблица вправо + Формация к центру');
+logMsg('🎯 Формация: разыгрывающий · крылья 45° · углы 0°');
+/* ============================================================
+   ПАТЧ: Правильные углы + Рандомные формации
+   ============================================================ */
+
+// ===== БАЗА ФОРМАЦИЙ (несколько вариантов) =====
+// Атака вверх (зелёные): PG на дуге · SG/SF крылья 45° · PF/C углы 0°
+var FORMATION_PRESETS = [
+  // Вариант 1 — Классика (Hoop League)
+  {
+    name: 'Классика',
+    greenAttack:     [[4,5],[2,4],[6,4],[1,3],[7,3]],
+    redDefendUp:     [[4,3],[2,2],[6,2],[1,1],[7,1]]
+  },
+  // Вариант 2 — Растянутая (все на 3pt)
+  {
+    name: 'Растянутая',
+    greenAttack:     [[4,5],[2,4],[6,4],[1,4],[7,4]],
+    redDefendUp:     [[4,3],[2,2],[6,2],[1,2],[7,2]]
+  },
+  // Вариант 3 — Сдвоенная (два у кольца)
+  {
+    name: 'Сдвоенная',
+    greenAttack:     [[4,5],[2,4],[6,4],[3,6],[5,6]],
+    redDefendUp:     [[4,3],[2,3],[6,3],[3,4],[5,4]]
+  },
+  // Вариант 4 — Широкие углы
+  {
+    name: 'Широкие углы',
+    greenAttack:     [[4,5],[2,3],[6,3],[0,3],[8,3]],
+    redDefendUp:     [[4,3],[2,2],[6,2],[0,2],[8,2]]
+  }
+];
+
+// Текущая активная формация
+var activeFormationIdx = 0;
+
+// Функция выбора случайной формации
+function pickRandomFormation(){
+  activeFormationIdx = Math.floor(Math.random() * FORMATION_PRESETS.length);
+  console.log('[FORM] Активная формация:', FORMATION_PRESETS[activeFormationIdx].name);
+  return activeFormationIdx;
+}
+
+// ===== ПРИМЕНЕНИЕ ФОРМАЦИИ =====
+applyFormation = function(ballOwnerTeam){
+  var swap = true;
+  try {
+    var s = localStorage.getItem('ib_greenBottom');
+    swap = (s === null) ? true : (s === '1');
+  } catch(e){}
+
+  var preset = FORMATION_PRESETS[activeFormationIdx] || FORMATION_PRESETS[0];
+  var baseGreenAttack = preset.greenAttack;
+  var baseRedDefend = preset.redDefendUp;
+
+  // Ограничение для 3v3 и 1v1 — берём первых N
+  var count = (MODE_PRESETS[gameMode] || MODE_PRESETS['5v5']).count;
+  var ga = baseGreenAttack.slice(0, count);
+  var rd = baseRedDefend.slice(0, count);
+
+  // Формируем зеркальные варианты (для атаки вниз)
+  var mirror = function(pos){ return pos.map(function(p){ return [p[0], ROWS - 1 - p[1]]; }); };
+  var greenDefendDown = mirror(rd); // защита внизу — зеркало защиты сверху
+  var redAttack = mirror(ga);       // атака красных вниз — зеркало атаки зелёных вверх
+
+  var greenPos, redPos;
+  if(ballOwnerTeam === 0){
+    greenPos = ga;
+    redPos = rd;
+  } else {
+    greenPos = greenDefendDown;
+    redPos = redAttack;
+  }
+
+  // Зеркалим всё если надо
+  if(!swap){
+    greenPos = mirror(greenPos);
+    redPos = mirror(redPos);
+  }
+
+  var greenFig = fig.filter(function(x){ return x.t === 0; });
+  var redFig = fig.filter(function(x){ return x.t === 1; });
+
+  greenFig.forEach(function(fg, i){
+    if(greenPos[i]){
+      fg.c = greenPos[i][0]; fg.r = greenPos[i][1];
+      fg.px = undefined; fg.py = undefined;
+      fg._animating = false;
+    }
+  });
+
+  redFig.forEach(function(fg, i){
+    if(redPos[i]){
+      fg.c = redPos[i][0]; fg.r = redPos[i][1];
+      fg.px = undefined; fg.py = undefined;
+      fg._animating = false;
+    }
+  });
+
+  pA = greenPos.slice();
+  pB = redPos.slice();
+  render();
+};
+
+// ===== ПРИ СТАРТЕ ИГРЫ — СЛУЧАЙНАЯ ФОРМАЦИЯ =====
+var _init_formation = initGame;
+initGame = function(a, b){
+  _init_formation(a, b);
+  pickRandomFormation();
+  var bh = byId(ball);
+  if(bh) setTimeout(function(){ applyFormation(bh.t); }, 50);
+};
+
+// ===== ПРИ СМЕНЕ ВЛАДЕЛЬЦА МЯЧА — ПЕРЕФОРМАТИРОВАНИЕ =====
+var _lastOwner_fmt = -1;
+setInterval(function(){
+  if(over) return;
+  if(fig.length === 0) return;
+
+  var bh = byId(ball);
+  if(!bh) return;
+
+  if(bh.t !== _lastOwner_fmt){
+    _lastOwner_fmt = bh.t;
+    applyFormation(bh.t);
+  }
+}, 250);
+
+// ===== СБРОС ПОСЛЕ ГОЛА =====
+var _reset_formation2 = resetPositions;
+resetPositions = function(scoringTeam){
+  _reset_formation2(scoringTeam);
+  var bh = byId(ball);
+  if(bh){
+    setTimeout(function(){ applyFormation(bh.t); }, 80);
+  }
+};
+
+// ===== ПОДБОР =====
+var _rebound_fmt2 = rebound;
+rebound = function(team){
+  _rebound_fmt2(team);
+  var bh = byId(ball);
+  if(bh) setTimeout(function(){ applyFormation(bh.t); }, 100);
+};
+
+// ===== ТАБЛИЦА ФИГУРЫ — ПРАВЫЙ ВЕРХНИЙ УГОЛ =====
+(function fixFigInfoPosition2(){
+  var info = document.getElementById('figInfo');
+  if(info){
+    info.style.top = '8px';
+    info.style.right = '8px';
+    info.style.left = 'auto';
+    info.style.maxWidth = '175px';
+    info.style.fontSize = '10px';
+    info.style.opacity = '0.95';
+  }
+})();
+
+var _ui_fixInfo2 = ui;
+ui = function(){
+  _ui_fixInfo2();
+  var info = document.getElementById('figInfo');
+  if(info){
+    info.style.top = '8px';
+    info.style.right = '8px';
+    info.style.left = 'auto';
+    info.style.maxWidth = '175px';
+  }
+};
+
+// ===== ОНЛАЙН: СИНХРОНИЗАЦИЯ ФОРМАЦИИ =====
+// Дополняем state значением активной формации
+var _capture_state2 = captureOnlineState;
+captureOnlineState = function(){
+  var s = _capture_state2();
+  s.formationIdx = activeFormationIdx;
+  return s;
+};
+
+var _apply_state2 = applyOnlineState;
+applyOnlineState = function(state){
+  if(state && typeof state.formationIdx === 'number'){
+    activeFormationIdx = state.formationIdx;
+  }
+  _apply_state2(state);
+};
+
+console.log('✅ Формации: 4 варианта, случайная при старте');
+logMsg('🎯 Углы в правильном месте · Рандомные ротации');
 </script>
 </body>
 </html>
